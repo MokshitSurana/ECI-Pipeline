@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
+import PipelineRunner from '../components/PipelineRunner';
 
 function StatCard({ label, value, sub, variant }) {
   return (
@@ -97,6 +98,9 @@ export default function DashboardPage() {
             Ecosystem Change Intelligence — real-time monitoring & triage
           </p>
         </div>
+
+        {/* Pipeline Runner */}
+        <PipelineRunner />
 
         {/* Stats Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
