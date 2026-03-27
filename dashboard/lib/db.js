@@ -15,7 +15,7 @@ const pool = new Pool({
   max: 5,
 });
 
-async function query(sql, params = []) {
+export async function query(sql, params = []) {
   const client = await pool.connect();
   try {
     const result = await client.query(sql, params);
