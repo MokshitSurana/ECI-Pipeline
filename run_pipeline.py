@@ -1,4 +1,5 @@
 """Real-Time Backend Worker for ECI Pipeline."""
+import os
 import time
 import subprocess
 from datetime import datetime
@@ -19,12 +20,18 @@ def poll_for_jobs():
                     conn.commit()
                     print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Picked up Job #{job_id}. Executing pipeline...")
                     
+                    env = os.environ.copy()
+                    env["PYTHONIOENCODING"] = "utf-8"
+                    env["PYTHONUTF8"] = "1"
+                    
                     # Run the pipeline execution
                     process = subprocess.Popen(
                         ["uv", "run", "main.py", "--stage", "all"],
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         text=True,
+                        encoding="utf-8",
+                        env=env,
                         bufsize=1 # Line buffered
                     )
                     
