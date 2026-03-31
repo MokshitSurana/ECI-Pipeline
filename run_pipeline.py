@@ -6,7 +6,18 @@ from datetime import datetime
 from sqlalchemy import text
 from utils.db import engine
 
+def cleanup_stuck_jobs():
+    """On startup, mark any stuck 'running' jobs as 'failed'."""
+    with engine.connect() as conn:
+        result = conn.execute(text(
+            "UPDATE pipeline_jobs SET status = 'failed', finished_at = now() WHERE status = 'running'"
+        ))
+        conn.commit()
+        if result.rowcount > 0:
+            print(f"[Worker] Cleaned up {result.rowcount} stuck job(s)")
+
 def poll_for_jobs():
+    cleanup_stuck_jobs()
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Worker started. Polling Supabase for pending jobs...")
     while True:
         try:
@@ -39,7 +50,7 @@ def poll_for_jobs():
                     for line in iter(process.stdout.readline, ''):
                         if line:
                             # Strip to prevent excessive newlines in DB
-                            log_str = line.strip('\n')
+                            log_str = line.rstrip('\n')
                             print(log_str)
                             try:
                                 with engine.begin() as log_conn:
@@ -57,10 +68,19 @@ def poll_for_jobs():
                         conn2.execute(text("UPDATE pipeline_jobs SET status = :status, finished_at = now() WHERE id = :id"), 
                                       {"status": final_status, "id": job_id})
                     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Job #{job_id} {final_status}.")
+        except KeyboardInterrupt:
+            print("\n[Worker] Shutting down...")
+            # Mark any running job as failed
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text("UPDATE pipeline_jobs SET status = 'failed', finished_at = now() WHERE status = 'running'"))
+            except Exception:
+                pass
+            break
         except Exception as e:
-            pass # Suppress silent transient polling errors (like connection drops)
+            pass # Suppress silent transient polling errors
         
-        # Sleep tight to avoid spamming the database
+        # Sleep to avoid spamming the database
         time.sleep(3)
 
 if __name__ == "__main__":

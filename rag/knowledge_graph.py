@@ -218,11 +218,30 @@ class KnowledgeGraph:
     # ── Persistence ───────────────────────────────────────────
 
     def save(self, path: Path = GRAPH_FILE):
-        """Serialize graph to JSON."""
+        """Serialize graph to JSON file AND Supabase."""
         data = nx.node_link_data(self.graph)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             json.dump(data, f, indent=2, default=str)
+
+        # Also save to Supabase for remote dashboard access
+        try:
+            from config.settings import USE_SUPABASE
+            if USE_SUPABASE:
+                from sqlalchemy import text
+                from utils.db import engine
+                graph_json = json.dumps(data, default=str)
+                with engine.connect() as conn:
+                    conn.execute(text("""
+                        INSERT INTO knowledge_graph_data (id, graph_json, updated_at)
+                        VALUES (1, CAST(:graph_json AS jsonb), now())
+                        ON CONFLICT (id) DO UPDATE SET graph_json = CAST(:graph_json AS jsonb), updated_at = now()
+                    """), {"graph_json": graph_json})
+                    conn.commit()
+                print(f"[GRAPH] Saved to Supabase + {path}")
+        except Exception as e:
+            print(f"[GRAPH] Saved to {path} (Supabase write failed: {e})")
+
         return path
 
     @classmethod
@@ -241,3 +260,4 @@ class KnowledgeGraph:
         if path.exists():
             return cls.load(path)
         return cls()
+

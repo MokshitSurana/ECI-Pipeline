@@ -2,6 +2,10 @@
 import os
 import json
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env file (GROQ_API_KEY, etc.)
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 # Paths
 PROJECT_ROOT = Path(__file__).parent.parent

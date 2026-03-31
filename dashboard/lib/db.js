@@ -146,13 +146,7 @@ export async function getEvidence(chunkIds) {
   return results;
 }
 
-export function getGraphData() {
-  const graphPath = path.join(process.cwd(), '..', 'data', 'knowledge_graph.json');
-  if (!fs.existsSync(graphPath)) {
-    return { nodes: [], links: [] };
-  }
-  const raw = JSON.parse(fs.readFileSync(graphPath, 'utf-8'));
-
+export async function getGraphData() {
   const colorMap = {
     cve: '#ef4444', component: '#3b82f6', change_event: '#10b981',
     policy_clause: '#f59e0b', api_level: '#8b5cf6', permission: '#ec4899',
@@ -162,6 +156,31 @@ export function getGraphData() {
     change_event: 8, cve: 12, component: 10, policy_clause: 9,
     api_level: 7, permission: 7, kernel_version: 7, sdk_version: 7, unknown: 5,
   };
+
+  let raw = null;
+
+  // Try Supabase first
+  try {
+    const rows = await query('SELECT graph_json FROM knowledge_graph_data WHERE id = 1');
+    if (rows.length > 0 && rows[0].graph_json) {
+      raw = typeof rows[0].graph_json === 'string'
+        ? JSON.parse(rows[0].graph_json)
+        : rows[0].graph_json;
+    }
+  } catch (e) {
+    console.error('[getGraphData] Supabase query failed:', e.message);
+    // Fall back to local file
+  }
+
+  // Fallback to local file
+  if (!raw) {
+    const graphPath = path.join(process.cwd(), '..', 'data', 'knowledge_graph.json');
+    if (fs.existsSync(graphPath)) {
+      raw = JSON.parse(fs.readFileSync(graphPath, 'utf-8'));
+    }
+  }
+
+  if (!raw) return { nodes: [], links: [] };
 
   const nodes = (raw.nodes || []).map(n => ({
     id: n.id, type: n.node_type || 'unknown',

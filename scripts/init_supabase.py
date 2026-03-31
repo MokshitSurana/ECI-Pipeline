@@ -50,7 +50,7 @@ def init_supabase():
 
     print("[INIT] Supabase initialization complete ✓")
 
-    # 3. Create tables for Real-Time Pipeline Runner
+    # 3. Create tables for Real-Time Pipeline Runner and Graph
     with engine.connect() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS pipeline_jobs (
@@ -69,8 +69,15 @@ def init_supabase():
                 created_at TIMESTAMPTZ DEFAULT now()
             )
         """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS knowledge_graph_data (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                graph_json JSONB NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT now()
+            )
+        """))
         conn.commit()
-        print("[INIT] Pipeline jobs and logs tables created")
+        print("[INIT] Pipeline jobs, logs, and knowledge_graph_data tables created")
 
 
 if __name__ == "__main__":

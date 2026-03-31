@@ -9,3 +9,4 @@ networkx
 psycopg2-binary
 pgvector
 sqlalchemy
+python-dotenv
