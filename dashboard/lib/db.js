@@ -123,8 +123,8 @@ export async function getEvidence(chunkIds) {
     if (rows.length > 0) {
       const row = rows[0];
       const diffJson = typeof row.diff_json === 'string' ? JSON.parse(row.diff_json) : row.diff_json;
-      const addedLines = diffJson?.added_lines || [];
-      const deletedLines = diffJson?.deleted_lines || [];
+      const addedLines = diffJson?.added || diffJson?.added_lines || [];
+      const deletedLines = diffJson?.deleted || diffJson?.deleted_lines || [];
 
       let evidenceText = '';
       if (addedLines.length > 0) {
@@ -182,11 +182,23 @@ export async function getGraphData() {
 
   if (!raw) return { nodes: [], links: [] };
 
-  const nodes = (raw.nodes || []).map(n => ({
-    id: n.id, type: n.node_type || 'unknown',
-    color: colorMap[n.node_type] || colorMap.unknown,
-    size: sizeMap[n.node_type] || 5, label: n.id,
-  }));
+  // Fetch LLM-generated titles from Sentinel for all change_events
+  const titleRows = await query("SELECT change_id, title FROM agent_events WHERE agent_name = 'sentinel'");
+  const titleMap = {};
+  titleRows.forEach(r => { titleMap[`change_${r.change_id}`] = r.title });
+
+  const nodes = (raw.nodes || []).map(n => {
+    let finalLabel = n.label || n.id;
+    // If we have an LLM-generated AI title, override the generic source label
+    if (n.node_type === 'change_event' && titleMap[n.id]) {
+      finalLabel = titleMap[n.id];
+    }
+    return {
+      id: n.id, type: n.node_type || 'unknown',
+      color: colorMap[n.node_type] || colorMap.unknown,
+      size: sizeMap[n.node_type] || 5, label: finalLabel,
+    };
+  });
 
   const links = (raw.edges || raw.links || []).map(l => ({
     source: l.source, target: l.target, relation: l.relation || 'unknown',

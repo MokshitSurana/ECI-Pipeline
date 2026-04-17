@@ -17,7 +17,8 @@ def clean_html(raw_html: str) -> str:
 
     # Remove common boilerplate classes/ids
     for selector in [".nav", ".header", ".footer", ".sidebar", ".menu",
-                     "#nav", "#header", "#footer", "#sidebar", "#cookie"]:
+                     "#nav", "#header", "#footer", "#sidebar", "#cookie",
+                     ".usa-banner", ".usa-skipnav", ".usa-header", ".usa-footer"]:
         for el in soup.select(selector):
             el.decompose()
 

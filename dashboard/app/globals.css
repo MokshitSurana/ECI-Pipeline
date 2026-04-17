@@ -23,6 +23,26 @@
     --gradient-3: linear-gradient(135deg, #f59e0b, #ef4444);
   }
 
+  :root[data-theme="light"] {
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-card: rgba(255, 255, 255, 0.8);
+    --bg-card-hover: rgba(255, 255, 255, 1);
+    --border: #e2e8f0;
+    --border-hover: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    --accent-blue: #2563eb;
+    --accent-purple: #7c3aed;
+    --accent-emerald: #059669;
+    --accent-amber: #d97706;
+    --accent-red: #dc2626;
+    --gradient-1: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    --gradient-2: linear-gradient(135deg, #10b981, #06b6d4);
+    --gradient-3: linear-gradient(135deg, #f59e0b, #ef4444);
+  }
+
   * {
     box-sizing: border-box;
     margin: 0;
@@ -50,6 +70,7 @@
     border: 1px solid var(--border);
     border-radius: 16px;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
   }
 
   .glass-card:hover {

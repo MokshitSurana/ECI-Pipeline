@@ -66,6 +66,7 @@ def coordinate_change(change, sentinel_event: AgentEvent) -> dict | None:
     delta_context = retrieve_context(
         change.diff_text or "",
         top_k=5,
+        source_filter=change.source_id,
     )
 
     # Retrieve cross-source context (Graph-RAG)

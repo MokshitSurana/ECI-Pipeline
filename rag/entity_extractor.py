@@ -167,7 +167,34 @@ def extract_entities(text: str) -> EntitySet:
     # ── Infer relationships from context ──────────────────────
     _infer_relationships(text, result)
 
+    # ── Filter high-degree hub entities that cause graph noise ──
+    _filter_hub_entities(result)
+
     return result
+
+
+# Entities that are connected to almost every source and drown out
+# precise traversals (e.g. CVE → android_14 → everything).
+# These are legitimate entities for metadata, but harmful for graph traversal.
+HUB_ENTITY_STOPLIST = {
+    # Android version nodes — appear in every bulletin, OEM patch, policy, etc.
+    "android_13", "android_14", "android_15", "android_12", "android_11",
+    # Generic component names shared across many sources
+    "wi-fi", "bluetooth",
+}
+
+
+def _filter_hub_entities(entity_set: EntitySet):
+    """Remove high-degree hub entities that cause excessive graph connectivity."""
+    entity_set.entities = [
+        e for e in entity_set.entities
+        if e.value not in HUB_ENTITY_STOPLIST
+    ]
+    # Also strip relationships involving hub entities
+    entity_set.relationships = [
+        r for r in entity_set.relationships
+        if r.source not in HUB_ENTITY_STOPLIST and r.target not in HUB_ENTITY_STOPLIST
+    ]
 
 
 def _infer_relationships(text: str, entity_set: EntitySet):

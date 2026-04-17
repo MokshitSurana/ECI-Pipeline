@@ -119,8 +119,14 @@ def chunk_json_records(
 
     records = []
 
+    # Detect format: CISA KEV has 'catalogVersion', NVD has nested 'cve' objects
+    is_cisa = isinstance(data, dict) and "vulnerabilities" in data and "catalogVersion" in data
+    is_nvd = (isinstance(data, dict) and "vulnerabilities" in data and not is_cisa
+              and data["vulnerabilities"] and isinstance(data["vulnerabilities"][0], dict)
+              and "cve" in data["vulnerabilities"][0])
+
     # CISA KEV format
-    if isinstance(data, dict) and "vulnerabilities" in data:
+    if is_cisa:
         feed_title = data.get("title", "CVE Feed")
         catalog_ver = data.get("catalogVersion", "")
         for vuln in data["vulnerabilities"]:
@@ -139,7 +145,7 @@ def chunk_json_records(
             records.append(record_text)
 
     # NVD format
-    elif isinstance(data, dict) and "vulnerabilities" in data:
+    elif is_nvd:
         for item in data["vulnerabilities"]:
             cve = item.get("cve", {})
             record_text = (

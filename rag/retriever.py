@@ -2,8 +2,7 @@
 from rag.embedder import query_similar
 from rag.entity_extractor import extract_entities
 from rag.knowledge_graph import KnowledgeGraph
-from utils.db import get_session, Change, Source
-
+from utils.db import get_session, Change, Source, Recommendation
 
 def retrieve_context(query: str, top_k: int = 5, source_filter: int = None,
                      category_filter: str = None) -> dict:
@@ -76,24 +75,46 @@ def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5) -> dict
     Returns:
         Same format as retrieve_context() plus graph metadata.
     """
+    # Check if the user is explicitly asking about a specific change ID (only for Chat UI)
+    import re
+    explicit_filters = None
+    match = None
+    if source_id is None:
+        match = re.search(r'change_(\d+)', change_text, re.IGNORECASE)
+        if match:
+            explicit_filters = {"change_id": int(match.group(1))}
+
     # Step 1: Vector similarity search (exclude same-source)
-    all_chunks = query_similar(change_text, top_k=top_k * 2)
+    all_chunks = query_similar(change_text, top_k=top_k * 2, filters=explicit_filters)
     vector_chunks = [c for c in all_chunks if c["metadata"].get("source_id") != source_id]
 
     # Step 2: Extract entities from change text
     entities = extract_entities(change_text)
     entity_ids = [e.value for e in entities.entities]
 
-    # Step 3: Knowledge graph traversal
-    graph_chunk_ids = set()
-    graph_change_ids = []
+    # Explicitly add the change_X node to the entity traversal list so the graph connects it
+    if match:
+        entity_ids.append(f"change_{match.group(1)}")
+
+    # Step 3: Knowledge graph traversal with relevance ranking
+    graph_chunks = []
     if entity_ids:
         kg = KnowledgeGraph.load_or_create()
-        graph_change_ids = kg.get_related_change_ids(entity_ids, max_hops=2)
+
+        # Look up query source category for cross-category ranking
+        query_category = ""
+        if source_id:
+            session = get_session()
+            query_src = session.query(Source).filter_by(id=source_id).first()
+            query_category = query_src.category if query_src else ""
+            session.close()
+
+        ranked_changes = kg.get_ranked_change_ids(
+            entity_ids, max_hops=2, query_source_category=query_category
+        )
 
         # Step 4: Get chunks for graph-discovered change events
-        for cid in graph_change_ids:
-            # Find chunks belonging to this change from vector store
+        for cid, _graph_score in ranked_changes:
             try:
                 change_chunks = query_similar(
                     change_text, top_k=3,
@@ -101,17 +122,56 @@ def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5) -> dict
                 )
                 for c in change_chunks:
                     if c["metadata"].get("source_id") != source_id:
-                        graph_chunk_ids.add(c["id"])
-                        # Add to results if not already present
-                        if not any(vc["id"] == c["id"] for vc in vector_chunks):
-                            vector_chunks.append(c)
+                        graph_chunks.append(c)
             except Exception:
                 pass
 
-    # Step 5: Deduplicate and limit
+    # ── Step 5: Reciprocal Rank Fusion (RRF) ──────────────────────
+    # RRF combines two independent rankings without letting either
+    # one evict the other's results. A chunk ranked highly by RAG
+    # stays competitive even if the graph disagrees.
+    #
+    # score(chunk) = 1/(rrf_k + rank_in_rag) + 1/(rrf_k + rank_in_graph)
+    #
+    # rrf_k=60 is the standard constant from the original RRF paper.
+    RRF_K = 60
+
+    # Build rank maps (chunk_id → 1-indexed rank)
+    rag_rank = {}
+    for rank, chunk in enumerate(vector_chunks, 1):
+        if chunk["id"] not in rag_rank:
+            rag_rank[chunk["id"]] = rank
+
+    graph_rank = {}
+    for rank, chunk in enumerate(graph_chunks, 1):
+        if chunk["id"] not in graph_rank:
+            graph_rank[chunk["id"]] = rank
+
+    # Collect all unique chunks
+    all_chunks_map = {}
+    for c in vector_chunks:
+        all_chunks_map[c["id"]] = c
+    for c in graph_chunks:
+        if c["id"] not in all_chunks_map:
+            all_chunks_map[c["id"]] = c
+
+    # Compute RRF scores
+    rrf_scored = []
+    for chunk_id, chunk in all_chunks_map.items():
+        score = 0.0
+        if chunk_id in rag_rank:
+            score += 1.0 / (RRF_K + rag_rank[chunk_id])
+        if chunk_id in graph_rank:
+            score += 1.0 / (RRF_K + graph_rank[chunk_id])
+        rrf_scored.append((score, chunk))
+
+    # Sort by RRF score descending (higher = more relevant)
+    rrf_scored.sort(key=lambda x: -x[0])
+
+    # Deduplicate and limit
     seen_ids = set()
     merged = []
-    for chunk in vector_chunks:
+    for _score, chunk in rrf_scored:
         if chunk["id"] not in seen_ids:
             seen_ids.add(chunk["id"])
             merged.append(chunk)
@@ -128,7 +188,7 @@ def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5) -> dict
         session.close()
 
         # Mark graph-discovered evidence
-        discovery = "graph" if chunk["id"] in graph_chunk_ids else "vector"
+        discovery = "graph" if chunk["id"] in graph_rank else "vector"
 
         evidence_blocks.append(
             f"[Cross-Source Evidence {idx}] (source={source_name}, "
@@ -147,7 +207,7 @@ def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5) -> dict
         "formatted_context": formatted,
         "chunk_ids": chunk_ids,
         "entities_extracted": len(entity_ids),
-        "graph_change_ids": graph_change_ids,
+        "graph_change_ids": list({c["metadata"].get("change_id") for c in graph_chunks if c["metadata"].get("change_id")}),
         "discovery_method": "graph_rag",
     }
 
@@ -156,3 +216,37 @@ def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5) -> dict
 def retrieve_cross_source(change_text: str, source_id: int, top_k: int = 5) -> dict:
     """Backward-compatible alias for retrieve_graph_rag."""
     return retrieve_graph_rag(change_text, source_id, top_k)
+
+
+def retrieve_recent_tickets(top_k: int = 10) -> str:
+    """Retrieve the most recent/critical action tickets from the DB."""
+    session = get_session()
+    try:
+        recs = session.query(Recommendation).order_by(Recommendation.risk_score.desc()).limit(top_k).all()
+        if not recs:
+            return "No recent action tickets found."
+        
+        blocks = []
+        for r in recs:
+            blocks.append(f"Ticket: [{r.priority.upper()}] {r.title} (Risk: {r.risk_score})\nSummary: {r.summary}")
+        return "\n\n".join(blocks)
+    finally:
+        session.close()
+
+
+def retrieve_pipeline_stats() -> str:
+    """Retrieve operational pipeline stats for DB."""
+    session = get_session()
+    try:
+        active_sources = session.query(Source).filter_by(active=True).count()
+        total_changes = session.query(Change).count()
+        pending_changes = session.query(Change).filter_by(status="pending").count()
+        escalated_changes = session.query(Change).filter_by(status="escalated").count()
+        
+        return (
+            f"Active Sources Monitored: {active_sources}\n"
+            f"Total Changes Detected: {total_changes}\n"
+            f"Pending Changes: {pending_changes} | Escalated Changes: {escalated_changes}"
+        )
+    finally:
+        session.close()

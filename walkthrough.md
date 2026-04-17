@@ -133,11 +133,16 @@ A **knowledge graph** (NetworkX) links extracted entities (CVEs, components, API
     - Evidence citations traced back to source chunks
 
 ### 7. Evaluation Framework
-- **[evaluation/test_data.py](file:///c:/Users/moksh/Desktop/eci-pipeline/evaluation/test_data.py)** — Synthetic test data for all 10 sources
-- **[evaluation/golden_dataset.py](file:///c:/Users/moksh/Desktop/eci-pipeline/evaluation/golden_dataset.py)** — 15 golden queries with expected source mappings
+- **evaluation/test_data.py** — Synthetic test data for all 10 sources
+- **evaluation/golden_dataset.py** — 15 golden queries with expected source mappings
   - **Results**: 93% rank-1 precision, 52% top-5 precision
 
-### 8. Dashboard (Next.js)
+### 8. Interactive Chat (FastAPI / Next.js)
+- **api.py** — Real-time FastAPI server exposing the Graph-RAG pipeline.
+- **agents/chat.py** — Assistant Agent that formulates markdown-rich responses using retrieved intelligence context.
+- **dashboard/components/ChatWidget.js** — Glassmorphic React UI component injecting the threat assistant globally via the Next.js proxy route (`/api/chat`).
+
+### 9. Dashboard (Next.js)
 - **`dashboard/`** — Premium dark-themed React dashboard
   - [lib/db.js](file:///c:/Users/moksh/Desktop/eci-pipeline/dashboard/lib/db.js) — reads SQLite + knowledge graph JSON via `better-sqlite3`
   - 5 API routes: `/api/{stats,tickets,sources,graph,changes,evidence}`

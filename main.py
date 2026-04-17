@@ -80,6 +80,7 @@ def stage_graph():
                 source_id=change.source_id,
                 entity_set=entities,
                 source_category=source.category if source else "",
+                change_label=f"{source.name} Update" if source else None
             )
             print(f"  Change #{change.id}: {entities.entity_count} entities, "
                   f"{len(entities.relationships)} relationships")

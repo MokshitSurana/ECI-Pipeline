@@ -63,7 +63,7 @@ class KnowledgeGraph:
     # ── Entity Population ─────────────────────────────────────
 
     def add_change_entities(self, change_id: int, source_id: int,
-                            entity_set, source_category: str = ""):
+                            entity_set, source_category: str = "", change_label: str = None):
         """Populate graph from an EntitySet extracted from a change.
 
         Args:
@@ -71,11 +71,16 @@ class KnowledgeGraph:
             source_id: Database ID of the source
             entity_set: EntitySet from entity_extractor
             source_category: Category string for the source
+            change_label: Optional label to override "change_X" display text
         """
         # Add change event node
         change_node = f"change_{change_id}"
-        self.add_node(change_node, "change_event",
-                      source_id=source_id, source_category=source_category)
+        
+        kwargs = {"source_id": source_id, "source_category": source_category}
+        if change_label:
+            kwargs["label"] = change_label
+            
+        self.add_node(change_node, "change_event", **kwargs)
 
         # Add all entities and link to change
         for entity in entity_set.entities:
@@ -126,35 +131,115 @@ class KnowledgeGraph:
 
         return result
 
-    def get_related_change_ids(self, entity_ids: list[str],
-                               max_hops: int = 2) -> list[int]:
-        """Find change event IDs connected to any of the given entities.
+    def get_ranked_change_ids(self, entity_ids: list[str],
+                              max_hops: int = 2,
+                              query_source_category: str = "") -> list[tuple[int, float]]:
+        """Find change events ranked by relevance to the query entities.
 
-        This is the core Graph-RAG primitive: given entities from a query,
-        find all related change events through the knowledge graph.
+        Scoring per change event:
+            score = weighted_entity_score / (1 + min_hop_distance)
+
+        Entity type weights (higher = more discriminating):
+          - cve (CVE-*, SVE-*): 3.0 — unique vulnerability identifiers
+          - policy_clause, permission: 2.0 — domain-specific terms
+          - component, api_level, kernel_version, sdk_version: 1.0 — shared broadly
 
         Args:
             entity_ids: List of entity values to start traversal from
             max_hops: Maximum graph traversal depth
 
         Returns:
-            Sorted list of unique change IDs connected to the entities.
+            List of (change_id, relevance_score) tuples, sorted by score
+            descending (most relevant first).
         """
-        change_ids = set()
+        # Entity type weights — discriminating identifiers score higher
+        ENTITY_WEIGHTS = {
+            "cve": 3.0,              # CVE-XXXX, SVE-XXXX — unique IDs
+            "policy_clause": 2.0,    # Play Integrity API, Data Safety, etc.
+            "permission": 2.0,       # READ_MEDIA_IMAGES, etc.
+            "component": 1.0,        # bluetooth, mali, etc. — appear broadly
+            "api_level": 1.0,        # android_14 — shared across many sources
+            "kernel_version": 1.0,   # kernel_6.6
+            "sdk_version": 1.0,      # sdk_35
+        }
+
+        # {change_id: {"shared_entities": {entity_id: weight}, "min_hops": int}}
+        change_info: dict[int, dict] = {}
 
         for entity_id in entity_ids:
-            connected = self.traverse(entity_id, max_hops)
-            for node_id in connected:
-                node_data = self.graph.nodes.get(node_id, {})
-                if node_data.get("node_type") == "change_event":
-                    # Extract numeric ID from "change_123" format
-                    try:
-                        cid = int(node_id.split("_", 1)[1])
-                        change_ids.add(cid)
-                    except (IndexError, ValueError):
-                        pass
+            if entity_id not in self.graph:
+                continue
 
-        return sorted(change_ids)
+            # Determine weight based on node type
+            node_data = self.graph.nodes.get(entity_id, {})
+            entity_type = node_data.get("node_type", "unknown")
+            weight = ENTITY_WEIGHTS.get(entity_type, 1.0)
+
+            # BFS with hop tracking
+            visited = set()
+            queue = [(entity_id, 0)]
+
+            while queue:
+                node, depth = queue.pop(0)
+                if node in visited:
+                    continue
+                visited.add(node)
+
+                # Check if this is a change_event node
+                if node != entity_id:
+                    nd = self.graph.nodes.get(node, {})
+                    if nd.get("node_type") == "change_event":
+                        try:
+                            cid = int(node.split("_", 1)[1])
+                            if cid not in change_info:
+                                change_info[cid] = {
+                                    "shared_entities": {},
+                                    "min_hops": depth,
+                                }
+                            change_info[cid]["shared_entities"][entity_id] = weight
+                            change_info[cid]["min_hops"] = min(
+                                change_info[cid]["min_hops"], depth
+                            )
+                        except (IndexError, ValueError):
+                            pass
+
+                if depth < max_hops:
+                    for neighbor in self.graph.successors(node):
+                        if neighbor not in visited:
+                            queue.append((neighbor, depth + 1))
+                    for neighbor in self.graph.predecessors(node):
+                        if neighbor not in visited:
+                            queue.append((neighbor, depth + 1))
+
+        # Score and rank using weighted entity sum + cross-category bonus
+        ranked = []
+        for cid, info in change_info.items():
+            weighted_sum = sum(info["shared_entities"].values())
+            score = weighted_sum / (1.0 + info["min_hops"])
+
+            # Cross-category diversity bonus: reward results from a
+            # different source category than the query source
+            if query_source_category:
+                node_data = self.graph.nodes.get(f"change_{cid}", {})
+                result_category = node_data.get("source_category", "")
+                if result_category and result_category != query_source_category:
+                    score *= 1.5  # 50% bonus for cross-category matches
+
+            ranked.append((cid, score))
+
+        # Sort by score descending, then by cid ascending for stability
+        ranked.sort(key=lambda x: (-x[1], x[0]))
+        return ranked
+
+    def get_related_change_ids(self, entity_ids: list[str],
+                               max_hops: int = 2) -> list[int]:
+        """Find change event IDs connected to any of the given entities.
+
+        Backward-compatible wrapper around get_ranked_change_ids().
+        Returns change IDs sorted by relevance score (most relevant first).
+        """
+        ranked = self.get_ranked_change_ids(entity_ids, max_hops)
+        return [cid for cid, _score in ranked]
 
     def get_connected_entities(self, entity_id: str,
                                max_hops: int = 2) -> list[dict]:

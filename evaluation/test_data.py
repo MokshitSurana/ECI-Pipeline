@@ -454,13 +454,170 @@ Functional updates:
 - Fixed intermittent Wi-Fi disconnections on Pixel 9 Pro
 - New: Theft Detection Lock improvements for Pixel 7+"""
 
+API_DIFF_V1 = """Android API Differences Report — SDK 34 to SDK 35 (Preview)
+Generated: February 2025
+
+Package android.hardware.camera2
+- No changes
+
+Package android.provider
+- Class MediaStore
+  - No changes
+
+Package android.security
+- Class KeyGenParameterSpec
+  - No changes
+
+Package androidx.camera.core (CameraX)
+- Class CameraSelector
+  - No changes
+- Class ImageCapture
+  - No changes
+
+New Permissions:
+- No new permissions added in this preview."""
+
+API_DIFF_V2 = """Android API Differences Report — SDK 34 to SDK 35 (Final)
+Generated: March 2025
+
+Package android.hardware.camera2
+- NEW: CameraCharacteristics.FLASH_STRENGTH_LEVEL added
+- CHANGED: CameraDevice.createCaptureSession now supports multi-stream HDR
+
+Package android.provider
+- Class MediaStore
+  - DEPRECATED: MediaStore.Images.Media.DATA column
+  - NEW: MediaStore.getPhotoPickerIntent() — apps should use the Photo Picker API instead of direct media access
+
+Package android.security
+- Class KeyGenParameterSpec
+  - NEW: setUnlockedDeviceRequired(boolean) — keys can now require device to be unlocked
+
+Package androidx.camera.core (CameraX)
+- Class CameraSelector
+  - NEW: LENS_FACING_EXTERNAL for USB cameras
+- Class ImageCapture
+  - NEW: setOutputFormat(OutputFormat.ULTRA_HDR)
+- NEW Class: CameraX.getAvailableCameraInfos() for dynamic camera discovery
+
+New Permissions:
+- NEW: android.permission.READ_MEDIA_VISUAL_USER_SELECTED — granular photo picker access
+- CHANGED: READ_MEDIA_IMAGES now requires Photo Picker migration by September 2025"""
+
+CTS_CDD_V1 = """Android Compatibility Test Suite (CTS) & Compatibility Definition Document (CDD)
+Version: CTS R16 / CDD Android 14
+
+Section 7: Hardware Compatibility
+
+7.3.10 Biometric Sensors
+- Devices implementing biometric authentication MUST meet Class 3 (Strong) requirements.
+- Fingerprint sensors MUST have a false acceptance rate of less than 0.002%.
+- Face unlock implementations MUST use depth sensing or IR verification.
+
+Section 9: Security Model
+
+9.1 Permissions
+- Apps targeting SDK 34 must declare all permissions in the manifest.
+- Runtime permissions MUST be revoked after 90 days of inactivity.
+
+Section 10: Software Compatibility
+
+10.1 WebView Compatibility
+- WebView MUST be updatable via Google Play system updates.
+- WebView MUST support HTTPS-only mode when enabled by the user.
+
+CTS Test Modules (R16):
+- CtsSecurityTestCases: 2,847 tests
+- CtsBiometricsTestCases: 312 tests
+- CtsPermissionTestCases: 1,203 tests"""
+
+CTS_CDD_V2 = """Android Compatibility Test Suite (CTS) & Compatibility Definition Document (CDD)
+Version: CTS R17 / CDD Android 15
+
+Section 7: Hardware Compatibility
+
+7.3.10 Biometric Sensors
+- Devices implementing biometric authentication MUST meet Class 3 (Strong) requirements.
+- Fingerprint sensors MUST have a false acceptance rate of less than 0.002%.
+- Face unlock implementations MUST use depth sensing or IR verification.
+- NEW: Devices with under-display cameras used for face unlock MUST pass the updated liveness detection test suite added in CTS R17.
+
+Section 9: Security Model
+
+9.1 Permissions
+- Apps targeting SDK 35 must declare all permissions in the manifest.
+- Runtime permissions MUST be revoked after 90 days of inactivity.
+- NEW: Apps requesting READ_MEDIA_IMAGES MUST integrate with the Photo Picker API. Direct broad storage access is no longer CDD-compliant for apps targeting SDK 35.
+
+Section 10: Software Compatibility
+
+10.1 WebView Compatibility
+- WebView MUST be updatable via Google Play system updates.
+- WebView MUST support HTTPS-only mode when enabled by the user.
+
+10.2 Camera Compatibility (NEW)
+- Devices supporting CameraX MUST pass the new CameraX conformance test module.
+- USB external cameras MUST be enumerable via CameraX.getAvailableCameraInfos().
+
+CTS Test Modules (R17):
+- CtsSecurityTestCases: 3,124 tests (+277 new)
+- CtsBiometricsTestCases: 348 tests (+36 new, including liveness detection)
+- CtsPermissionTestCases: 1,289 tests (+86 new, including Photo Picker compliance)
+- CtsCameraXTestCases: 156 tests (NEW module)"""
+
 
 def seed_test_data():
-    """Populate the database with realistic test snapshots and changes."""
+    """Populate the database with realistic test snapshots and changes.
+    
+    This is a DETERMINISTIC seeder: it clears all prior test artifacts
+    (snapshots, changes, embeddings, graph) before re-creating them,
+    ensuring the ablation study runs on exactly this data every time.
+    """
+    from rag.chunker import chunk_change
+    from rag.embedder import add_chunks
+    from rag.entity_extractor import extract_from_change
+    from rag.knowledge_graph import KnowledgeGraph
+    from config.settings import USE_SUPABASE
+
     init_db()
     seed_sources()
 
     session = get_session()
+
+    # ── Step 0: Reset — delete all prior test artifacts in FK-safe order ──
+    print("[TEST DATA] Clearing prior test data...")
+    from utils.db import Recommendation, AgentEvent
+    session.query(Recommendation).delete()
+    session.query(AgentEvent).delete()
+    session.query(Change).delete()
+    session.query(Snapshot).delete()
+    session.commit()
+
+    # Clear vector store
+    if USE_SUPABASE:
+        from sqlalchemy import text
+        from utils.db import engine
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("DELETE FROM embeddings"))
+                conn.commit()
+            print("[TEST DATA] Cleared pgvector embeddings.")
+        except Exception as e:
+            print(f"[TEST DATA] Could not clear pgvector: {e}")
+    else:
+        import chromadb
+        from config.settings import CHROMA_PERSIST_DIR
+        try:
+            client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+            try:
+                client.delete_collection("eci_delta_chunks")
+            except Exception:
+                pass
+            print("[TEST DATA] Cleared ChromaDB collection.")
+        except Exception as e:
+            print(f"[TEST DATA] Could not clear ChromaDB: {e}")
+
+    # ── Step 1: Seed snapshots and changes ──
     sources = session.query(Source).all()
 
     # Map source categories to content pairs
@@ -476,6 +633,8 @@ def seed_test_data():
     name_content_map = {
         "NVD CVE Feed (Android)": (NVD_V1, NVD_V2),
         "Pixel Update Bulletin": (PIXEL_BULLETIN_V1, PIXEL_BULLETIN_V2),
+        "Android API Differences Report": (API_DIFF_V1, API_DIFF_V2),
+        "Android CTS/CDD Changes": (CTS_CDD_V1, CTS_CDD_V2),
     }
 
     now = datetime.now(timezone.utc)
@@ -529,9 +688,53 @@ def seed_test_data():
             print(f"  {source.name}: {diff_data['summary']} (ratio: {diff_data['change_ratio']})")
 
     session.commit()
-    session.close()
     print(f"\n[TEST DATA] Created {changes_created} change events from {len(sources)} sources.")
+
+    # ── Step 2: Chunk + Embed all changes ──
+    print("[TEST DATA] Embedding chunks into vector store...")
+    changes = session.query(Change).all()
+    total_chunks = 0
+
+    for change in changes:
+        source = session.query(Source).filter_by(id=change.source_id).first()
+        source_category = source.category if source else ""
+        source_name = source.name if source else ""
+
+        chunks = chunk_change(
+            change, change.source_id,
+            source_category=source_category,
+            source_name=source_name,
+        )
+        if chunks:
+            added = add_chunks(chunks)
+            total_chunks += added
+
+    print(f"[TEST DATA] Embedded {total_chunks} chunks.")
+
+    # ── Step 3: Build Knowledge Graph ──
+    print("[TEST DATA] Building knowledge graph...")
+    kg = KnowledgeGraph()  # Fresh graph — don't load stale file
+
+    for change in changes:
+        source = session.query(Source).filter_by(id=change.source_id).first()
+        entities = extract_from_change(change)
+        if entities.entity_count > 0:
+            kg.add_change_entities(
+                change_id=change.id,
+                source_id=change.source_id,
+                entity_set=entities,
+                source_category=source.category if source else "",
+                change_label=f"{source.name} Update" if source else None
+            )
+
+    graph_path = kg.save()
+    stats = kg.stats()
+    print(f"[TEST DATA] Graph: {stats['total_nodes']} nodes, {stats['total_edges']} edges -> {graph_path}")
+
+    session.close()
+    print("[TEST DATA] Deterministic test environment ready.\n")
 
 
 if __name__ == "__main__":
     seed_test_data()
+
