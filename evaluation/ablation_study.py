@@ -505,7 +505,7 @@ def run_ablation_study(k: int = 5, do_seed: bool = False,
         )
 
     md_text = "\n".join(md_lines) + "\n"
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(md_text)
     print(f"\n{'=' * 90}\nResults written to {output_path}")
 

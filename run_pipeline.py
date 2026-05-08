@@ -46,19 +46,35 @@ def poll_for_jobs():
                         bufsize=1 # Line buffered
                     )
                     
-                    # Read stdout line by line and proxy it directly to the logs table in Supabase
+                    # Read stdout and batch-insert into pipeline_logs.
+                    # Flush every LOG_BATCH_SIZE lines to avoid one DB write per print().
+                    LOG_BATCH_SIZE = 20
+                    log_buffer = []
                     for line in iter(process.stdout.readline, ''):
                         if line:
-                            # Strip to prevent excessive newlines in DB
                             log_str = line.rstrip('\n')
                             print(log_str)
-                            try:
-                                with engine.begin() as log_conn:
-                                    log_conn.execute(text(
-                                        "INSERT INTO pipeline_logs (job_id, log_line) VALUES (:job_id, :log_line)"
-                                    ), {"job_id": job_id, "log_line": log_str})
-                            except Exception as db_err:
-                                print(f"[Worker Log DB Error] {db_err}")
+                            log_buffer.append({"job_id": job_id, "log_line": log_str})
+                            if len(log_buffer) >= LOG_BATCH_SIZE:
+                                try:
+                                    with engine.begin() as log_conn:
+                                        log_conn.execute(
+                                            text("INSERT INTO pipeline_logs (job_id, log_line) VALUES (:job_id, :log_line)"),
+                                            log_buffer,
+                                        )
+                                except Exception as db_err:
+                                    print(f"[Worker Log DB Error] {db_err}")
+                                log_buffer = []
+                    # Flush any remaining lines
+                    if log_buffer:
+                        try:
+                            with engine.begin() as log_conn:
+                                log_conn.execute(
+                                    text("INSERT INTO pipeline_logs (job_id, log_line) VALUES (:job_id, :log_line)"),
+                                    log_buffer,
+                                )
+                        except Exception as db_err:
+                            print(f"[Worker Log DB Error] {db_err}")
                     
                     process.wait()
                     final_status = "completed" if process.returncode == 0 else "failed"
@@ -80,8 +96,9 @@ def poll_for_jobs():
         except Exception as e:
             pass # Suppress silent transient polling errors
         
-        # Sleep to avoid spamming the database
-        time.sleep(3)
+        # Sleep to avoid spamming the database.
+        # 15s idle poll = 240 SELECTs/hour instead of 1,200.
+        time.sleep(15)
 
 if __name__ == "__main__":
     poll_for_jobs()

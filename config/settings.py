@@ -23,7 +23,7 @@ USE_SUPABASE = os.environ.get("USE_SUPABASE", "true").lower() == "true"
 
 SUPABASE_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://postgres.wyflritmsjfpfiixzbmc:Mokshit%403110@aws-0-us-west-2.pooler.supabase.com:6543/postgres"
+    "postgresql://postgres.wyflritmsjfpfiixzbmc:Mokshit%403110@aws-0-us-west-2.pooler.supabase.com:5432/postgres"
 )
 
 # SQLAlchemy engine URL — swap based on toggle

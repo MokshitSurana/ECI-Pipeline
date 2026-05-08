@@ -284,3 +284,4 @@ QUERY_TYPE_LABELS = {
     "D": "Natural Language",
     "E": "Entity-Only",
 }
+

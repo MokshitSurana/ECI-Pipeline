@@ -185,15 +185,32 @@ HUB_ENTITY_STOPLIST = {
 
 
 def _filter_hub_entities(entity_set: EntitySet):
-    """Remove high-degree hub entities that cause excessive graph connectivity."""
-    entity_set.entities = [
+    """Remove high-degree hub entities and cap excessive identical types."""
+    # Filter stopwords
+    filtered = [
         e for e in entity_set.entities
         if e.value not in HUB_ENTITY_STOPLIST
     ]
-    # Also strip relationships involving hub entities
+    
+    # Cap excessive numbers of identical types (e.g. 1500 CVEs from CISA)
+    capped = []
+    type_counts = {}
+    valid_entity_values = set()
+    
+    for e in filtered:
+        count = type_counts.get(e.entity_type, 0)
+        max_allowed = 15 if e.entity_type == "cve" else 30
+        if count < max_allowed:
+            capped.append(e)
+            valid_entity_values.add(e.value)
+            type_counts[e.entity_type] = count + 1
+
+    entity_set.entities = capped
+
+    # Also strip relationships involving hub entities or entities truncated above
     entity_set.relationships = [
         r for r in entity_set.relationships
-        if r.source not in HUB_ENTITY_STOPLIST and r.target not in HUB_ENTITY_STOPLIST
+        if r.source in valid_entity_values and r.target in valid_entity_values
     ]
 
 
@@ -231,9 +248,13 @@ def _infer_relationships(text: str, entity_set: EntitySet):
                 else:
                     entity_set.add_relationship(clause.value, perm.value, "references")
 
-    # Co-occurrence: CVEs that appear in the same change
-    for i, cve1 in enumerate(cves):
-        for cve2 in cves[i + 1:]:
+    # Co-occurrence: CVEs that appear in the same change.
+    # Cap at MAX_CVE_COOCCURRENCE to prevent O(n²) blowup on large feeds
+    # like NVD which can contain hundreds of CVEs in a single diff.
+    MAX_CVE_COOCCURRENCE = 30
+    cves_for_cooccurrence = cves[:MAX_CVE_COOCCURRENCE]
+    for i, cve1 in enumerate(cves_for_cooccurrence):
+        for cve2 in cves_for_cooccurrence[i + 1:]:
             entity_set.add_relationship(cve1.value, cve2.value, "co_occurs")
 
 
