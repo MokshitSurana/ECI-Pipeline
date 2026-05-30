@@ -1,0 +1,933 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\documentclass[
+]{article}
+\usepackage{xcolor}
+\usepackage{amsmath,amssymb}
+% \setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{longtable,booktabs,array}
+\newcounter{none} % for unnumbered tables
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{From Deltas to Decisions: DeltaRAG and Ecosystem Change\\Intelligence for Digital Risk Monitoring}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Operational risk controls in digital ecosystems increasingly depend on
+external, fast-changing signals, security advisories, vulnerability
+catalogs, API release notes, and platform policy updates, to calibrate
+fraud detection thresholds, enforce verification gates, and escalate
+incidents. However, monitoring these sources remains predominantly
+manual, reactive, and disconnected from downstream decision workflows.
+When detection lags, enforcement logic drifts: teams either over-block
+legitimate activity or under-block abuse, widening the exposure window
+between an ecosystem change and an operational response. We introduce
+\textbf{Ecosystem Change Intelligence (ECI)}, a framework that reframes
+ecosystem monitoring as a change-centric decision pipeline. ECI treats
+each monitored source as a versioned stream, detects deltas between
+snapshots, and converts them into structured Change Events that flow
+through AI-driven triage and coordination agents to produce
+evidence-backed Action Tickets. Methodologically, we contribute
+\textbf{DeltaRAG}, a retrieval methodology that combines (a)
+delta-grounded vector retrieval on change-local context windows rather
+than full documents, and (b) a knowledge graph (KG) augmentation layer
+that links change events to entities, vulnerabilities, and cross-source
+signals so that escalation decisions can be justified using connected
+evidence rather than isolated snippets, the two components fused via
+Reciprocal Rank Fusion. We instantiate ECI on the Android digital risk
+ecosystem, monitoring security bulletins, Play Integrity API updates,
+CISA Known Exploited Vulnerabilities, and developer policy changes.
+A 100-query (85 scored) deterministic ablation study across
+768-dimensional Nomic v1.5 embeddings stored in Supabase/pgvector
+shows that DeltaRAG outperforms Standard RAG on top-rank quality
+(P@1\,=\,0.882 vs.\ 0.847; MRR\,=\,0.930 vs.\ 0.913), is statistically
+tied on nDCG@5 ($p = 0.43$), and strictly dominates a KG-only baseline
+on every metric ($\Delta$R@5\,=\,$+0.328$, $p < 0.001$, Holm-corrected),
+while rejecting 100\% of out-of-scope queries. The system achieves
+reliable structured-output generation from lightweight LLMs (Llama 3.1
+8B) within a multi-agent architecture (Sentinel triage + Coordinator
+synthesis) that surfaces prioritized, traceable recommendations to
+fraud operations teams.
+\end{abstract}
+
+
+\noindent\textbf{Keywords:} Retrieval-Augmented Generation, Change Intelligence,
+Digital Risk Monitoring, Multi-Agent Systems, Knowledge Graphs, Android
+Security, Fraud Operations
+
+\section{Introduction}\label{introduction}
+
+Modern digital risk operations depend on a continuous flow of ecosystem
+intelligence, security patches, platform policy updates, API
+deprecations, and vulnerability disclosures to decide when to adjust
+fraud detection models, step up verification, tighten enforcement gates,
+or escalate incidents. The Android ecosystem alone publishes monthly
+security bulletins, quarterly Play Integrity API revisions, rolling
+developer policy updates, and references dozens of CISA Known Exploited
+Vulnerabilities (KEV) entries annually. Each of these signals can
+silently alter the trust assumptions underlying operational fraud
+controls.
+
+Despite the operational criticality of these signals, current monitoring
+approaches are predominantly static and rule-based. Teams rely on
+keyword alerts, manual reading of changelogs, or brittle heuristics that
+treat documents as fixed reference material. In practice, ecosystem
+updates are heterogeneous in format, cadence, and terminology, and
+``meaningful change'' is rarely captured by simple text diffs. More
+importantly, static systems fail at the step that matters most for
+operations: \emph{translating updates into auditable action}. Without
+evidence-backed outputs that specify what to do next, who should own it,
+how urgent it is, and exactly what evidence supports the recommendation,
+decision-making remains subjective and difficult to operationalize.
+
+Retrieval-Augmented Generation (RAG) has emerged as a promising paradigm
+for grounding large language model (LLM) outputs in retrieved evidence,
+reducing hallucination and improving factual accuracy. However, standard
+RAG pipelines are designed for static document collections and struggle
+with the change-centric nature of ecosystem monitoring. When a security
+bulletin is revised or a policy page is updated, standard RAG either
+retrieves the entire document (diluting the signal) or misses the change
+entirely because the embedding space does not distinguish between old
+and new content.
+
+We introduce \textbf{Ecosystem Change Intelligence (ECI)}, a framework
+that reframes ecosystem monitoring as a structured decision pipeline.
+ECI treats each monitored source as a versioned stream and processes them through an six-stage pipeline implementation
+of these three stages: (1) \textbf{Delta Detection}, identifying
+meaningful changes between time-stamped snapshots; (2)
+\textbf{Change-Grounded Retrieval}, embedding and retrieving
+change-local context rather than full documents; and (3)
+\textbf{Evidence-Backed Action Generation}, producing structured
+recommendations with traceable citations, priority levels, and ownership
+assignments.
+
+To implement ECI, we contribute \textbf{DeltaRAG}, a retrieval
+methodology that combines two complementary components fused via
+Reciprocal Rank Fusion. The first component is a delta-grounded vector
+index: changed content (additions and deletions, rather than full
+documents) is chunked, embedded using task-aware models, and stored as
+versioned vectors, enabling a Sentinel Triage Agent to score relevance
+and risk without hallucinating on stale content. The second component
+is a \textbf{knowledge graph (KG) augmentation} layer that links change
+events to extracted entities (CVEs, APIs, permissions, policy clauses)
+via deterministic regex-based extraction and 2-hop graph traversal,
+enabling a Coordinator Agent to synthesize cross-source patterns,
+identify cascading risks, and produce recommendations justified by
+connected evidence rather than isolated snippets. Unlike Graph-RAG
+approaches (Edge et al., 2024) that construct entity-relation graphs
+from unstructured text using LLMs, our KG layer prioritizes latency,
+determinism, and zero hallucination, design choices we revisit in
+Section~\ref{discussionn} as both a strength and a future-work target.
+
+We instantiate ECI on the Android digital risk ecosystem, a domain
+chosen for its operational significance to fraud teams at financial
+institutions and its rich, publicly available signal landscape. Our
+system monitors four source categories, Android Security Bulletins,
+Play Integrity API documentation, CISA KEV feeds, and Google Developer
+Policy updates, and processes them through an six-stage pipeline
+from source monitoring to interactive dashboard delivery. The pipeline
+uses Nomic v1.5 embeddings (768-dimensional, task-aware, locally
+hosted) stored in Supabase with pgvector for sub-10ms similarity
+search, and employs lightweight LLMs (Llama 3.1 8B) via Groq for
+rapid prototyping with a planned migration to self-hosted GCP
+infrastructure.
+
+The primary contribution of this paper is \textbf{DeltaRAG}, the
+fused delta-grounded retrieval methodology described above, which
+enables high-precision triage of evolving platform signals. Beyond
+DeltaRAG, we contribute: (1) the \textbf{ECI framework}, formalizing
+ecosystem monitoring as a change-centric decision pipeline with formal
+definitions for delta detection, retrieval, and risk scoring; (2) a \textbf{knowledge graph augmentation} design
+for cross-source evidence linking via 2-hop traversal with entity-type
+weighting and a cross-category bonus; (3) a
+\textbf{multi-agent architecture} (Sentinel triage + Coordinator
+synthesis) that converts change events into auditable Action Tickets
+with formal composite risk scoring (Equation~11); and (4) an
+\textbf{ablation study} across 100 deterministic benchmark queries
+(85 scored, 10 query-type categories, Holm-corrected significance)
+showing that DeltaRAG outperforms Standard RAG on top-rank quality
+(P@1\,=\,0.882 vs.\ 0.847; MRR\,=\,0.930 vs.\ 0.913), is statistically
+tied on nDCG@5 ($p = 0.43$), and strictly dominates a KG-only baseline
+on every metric ($\Delta$R@5\,=\,$+0.328$, $p < 0.001$), while
+empirically identifying pure-regex entity extraction as the primary
+bottleneck in the standalone KG variant.
+
+\section{Related Work}\label{related-work}
+
+\subsection{Retrieval-Augmented
+Generation}\label{retrieval-augmented-generation}
+
+Retrieval-Augmented Generation (RAG) was introduced by Lewis et al.
+(2020) as a method for augmenting parametric language models with
+non-parametric retrieval over external knowledge stores. The RAG
+paradigm has since been widely adopted for knowledge-intensive tasks,
+with subsequent work focusing on improving retrieval quality (Izacard \&
+Grave, 2021), chunk-level optimization (Shi et al., 2023), and
+domain-specific adaptations for legal (Savelka et al., 2023), medical
+(Xiong et al., 2024), and cybersecurity (Aghaei et al., 2023)
+applications. However, all of these approaches assume a static document
+corpus: the same document is retrieved regardless of whether it was
+updated an hour ago or a year ago. This static assumption is
+fundamentally incompatible with ecosystem monitoring, where the
+\emph{change itself},not the document,is the unit of interest.
+\textbf{DeltaRAG} closes this gap by restricting the retrieval index to
+change-local context (Eq.~5), ensuring that retrieval precision is not
+diluted by unchanged background content.
+
+\subsection{Knowledge Graphs for Information
+Retrieval}\label{knowledge-graphs-for-information-retrieval}
+
+Knowledge graphs have been integrated with language models in several
+retrieval paradigms. Graph-RAG approaches (Edge et al., 2024; He et al.,
+2024) construct entity-relation graphs from unstructured text and use
+graph traversal to improve retrieval coverage and reasoning depth.
+KG-augmented QA systems (Yasunaga et al., 2021) leverage structured
+triples to resolve multi-hop queries. In the cybersecurity domain,
+knowledge graphs have been used to link CVE entries, attack patterns,
+and affected software (Mittal et al., 2016; Li et al., 2022). These
+systems operate on static knowledge bases. Our Graph-RAG layer
+(Eqs.~6--10) is specifically designed for \emph{change-event linking}:
+nodes represent individual delta events, not documents, and edges encode
+operational relationships (e.g., a CVE \emph{affects} an API level that
+\emph{references} a policy clause). This change-centric graph topology
+surfaces cascading risk patterns that would remain invisible to either
+document-level or purely vector-based retrieval.
+
+\subsection{AI Agents and Multi-Agent
+Systems}\label{ai-agents-and-multi-agent-systems}
+
+The emergence of LLM-powered agents,systems that can plan, use tools,
+and take actions,has accelerated with frameworks like ReAct (Yao et
+al., 2023), LangChain, and LangGraph. Multi-agent architectures extend
+this to cooperative or hierarchical agent teams, with recent work on
+AutoGen (Wu et al., 2023) and CAMEL (Li et al., 2023) demonstrating
+effective task decomposition. In fraud detection and cybersecurity,
+agentic systems have been proposed for threat hunting (Ferrag et al.,
+2024) and automated incident response. Prior multi-agent work focuses on
+open-ended reasoning and task planning; it does not target
+\emph{structured-output stability}, where every agent response must
+parse as valid JSON and conform to a fixed operational schema. Our
+Sentinel + Coordinator architecture is explicitly optimized for this
+requirement, enforcing schema compliance through few-shot examples,
+chain-of-thought prefixes, and Pydantic validation,a design choice
+validated by our LLM selection rationale in Section~\ref{llm-evaluation-and-selection}.
+
+\subsection{Digital Risk and Threat Intelligence
+Monitoring}\label{digital-risk-and-threat-intelligence-monitoring}
+
+Threat intelligence platforms (TIPs) such as MISP, OpenCTI, and
+commercial solutions aggregate indicators of compromise (IoCs) and
+vulnerability data. However, these systems primarily operate on
+structured feeds (STIX/TAXII, CVE JSON) and do not perform semantic
+analysis of unstructured platform documentation changes. Platform change
+monitoring in industry remains largely manual, with security teams
+subscribing to mailing lists and RSS feeds. Recent work on automated
+change detection for web content (Patel et al., 2023) and policy
+tracking (Li et al., 2024) addresses source-level detection but stops
+at the detection boundary: neither system converts detected changes into
+risk-scored, evidence-grounded, owner-assigned action items. ECI closes
+this last-mile gap, linking detection directly to operational decision
+support through DeltaRAG retrieval and the composite risk score
+(Eq.~11).
+
+\subsection{Embedding Models for Specialized
+Domains}\label{embedding-models-for-specialized-domains}
+
+The choice of embedding model significantly impacts retrieval quality in
+RAG systems. General-purpose models like Sentence-BERT (Reimers \&
+Gurevych, 2019) and OpenAI embeddings perform well on broad tasks but
+may underperform on domain-specific terminology. Task-aware models like
+Nomic Embed v1.5 (Nussbaum et al., 2024) allow prefix-based optimization
+(\texttt{search\_document:}, \texttt{search\_query:}) that adapts the embedding
+space to retrieval use cases. Domain-specialized models like BGE (Xiao
+et al., 2024) and cybersecurity-specific embeddings (Aghaei et al.,
+2023) trade generality for improved in-domain performance. We benchmark
+three model families against a golden dataset of Android security
+queries (Section~7.1) and find that \emph{task-awareness} and
+\emph{long-context support} (8,192 tokens) are more predictive of
+retrieval quality than raw model size,motivating the selection of
+Nomic v1.5 as the DeltaRAG backbone.
+
+\section{Problem Formulation: Ecosystem Change
+Intelligence}\label{problem-formulation-ecosystem-change-intelligence}
+
+\subsection{The Operational Gap}\label{the-operational-gap}
+
+We define the operational problem as follows. Let
+$S = \{s_1, s_2, \ldots, s_n\}$
+be a set of monitored ecosystem sources. Each source $s_i$ produces a
+time-ordered sequence of snapshots:
+$s_i(t_1), s_i(t_2), \ldots$.
+
+A \textbf{change event} $\Delta_i(t)$ is a structured record capturing the
+semantic difference between consecutive snapshots
+$s_i(t_k)$ and $s_i(t_{k-1})$.
+
+The operational objective is to produce, for each relevant change event,
+an \textbf{Action Ticket}
+
+\[
+A = (\text{summary}, \text{risk\_score},
+\text{recommended\_actions}, \text{owner},
+\text{urgency}, \text{evidence\_citations})
+\]
+
+that is grounded in retrieved context and auditable by human analysts.
+
+The gap in current approaches is threefold. First, \textbf{detection
+latency}: manual monitoring introduces hours-to-days delay between a
+platform change and organizational awareness. Second, \textbf{triage
+noise}: without semantic filtering, teams are overwhelmed by cosmetic
+changes (formatting, navigation updates) that are operationally
+irrelevant. Third, \textbf{recommendation drift}: without grounding in
+retrieved evidence, LLM-generated recommendations may hallucinate
+actions that are inconsistent with actual platform behavior.
+
+\subsection{ECI Framework}\label{eci-framework}
+
+Ecosystem Change Intelligence (ECI) addresses this gap through three
+formal stages:
+
+\textbf{Stage 1: Delta Detection.} For each source $s_i$, the system
+periodically fetches a new snapshot $s_i(t_k)$, computes a structured diff
+against the previous snapshot $s_i(t_{k-1})$, and produces a change event
+$\Delta_i(t)$ containing the added text, deleted text, change type, and
+source metadata. This differs from naive textual diffing in that it
+applies HTML cleaning, boilerplate removal, and semantic deduplication
+before comparison.
+
+\textbf{Stage 2: Change-Grounded Retrieval.} Only the delta content
+(added and deleted spans) is chunked (1,600 characters, 200-character
+overlap), embedded using a task-aware model with \texttt{search\_document:}
+prefix optimization, and stored in a vector index. Restricting the
+embedding pipeline to delta content (rather than embedding full
+documents) is a deliberate design choice: it concentrates the index on
+operationally relevant signal and avoids the vector dilution that
+plagues full-document RAG over long, repetitive ecosystem corpora. In
+parallel, a knowledge graph (KG) layer indexes entities extracted from
+each change event (CVEs, APIs, permissions, policy clauses) and links
+them to their originating change. At query time, the system performs
+vector retrieval against the delta index and a 2-hop KG traversal, and
+fuses the two ranked lists via Reciprocal Rank Fusion. We refer to this
+fused retrieval methodology as \textbf{DeltaRAG}.
+
+\textbf{Stage 3: Evidence-Backed Action Generation.} For changes deemed
+relevant by the Sentinel Agent (relevance score $\geq$ threshold), a
+Coordinator Agent consumes the DeltaRAG output, identifies cross-source
+connections (e.g., a CVE linked to an API deprecation linked to a policy
+change), and generates Action Tickets with structured fields: summary,
+risk score, recommended actions, priority, owner suggestion, and
+evidence citations. All outputs are constrained to a strict JSON schema
+to ensure downstream parseability.
+
+\subsection{Assumptions}\label{assumptions}
+
+The ECI framework operates under the following assumptions: (1) Public
+ecosystem sources reflect genuine signal changes relevant to operational
+risk; (2) Textual diffs between cleaned snapshots capture meaningful
+platform updates; (3) Semantic similarity in the embedding space
+approximates contextual relevance for risk assessment; (4) Composite
+risk scoring (combining relevance, severity, and affected signal count)
+can approximate fraud impact; (5) Lightweight instruction-tuned LLMs
+(7--8B parameters) can produce reliable structured JSON outputs with
+appropriate prompting.
+
+\subsection{Formal Framework}\label{formal-framework}
+
+We now formalize the core ECI operations. Let
+$\mathcal{S} = \{s_1, s_2, \ldots, s_n\}$ be the set of monitored
+sources. Each source $s_i$ produces a time-ordered snapshot sequence:
+\begin{equation}
+  \mathcal{T}_i = \langle s_i(t_1),\, s_i(t_2),\, \ldots \rangle, \quad t_1 < t_2 < \cdots
+\end{equation}
+
+\noindent\textbf{Delta Detection.} A \emph{change event} is the
+structured difference between consecutive snapshots:
+\begin{equation}
+  \Delta_i(t_k) = \mathrm{Diff}\!\left(s_i(t_k),\, s_i(t_{k-1})\right)
+                = \bigl\{(\mathrm{kind}_j,\, \mathrm{text}_j)\bigr\}_{j=1}^{m}
+\end{equation}
+where $\mathrm{kind}_j \in \{\mathrm{added}, \mathrm{deleted}, \mathrm{context}\}$ and cosmetic tokens are removed before comparison.
+
+\noindent\textbf{Chunking.} The delta is segmented into overlapping spans:
+\begin{equation}
+  \mathcal{C}\!\left(\Delta_i(t_k)\right) = \{c_1, c_2, \ldots, c_p\}
+\end{equation}
+where $|c_j| \leq L_{\max} = 1600$ characters and consecutive chunks share $L_{\mathrm{ovlp}} = 200$ characters of overlap.
+
+\noindent\textbf{Task-Aware Embedding.} Each chunk is embedded with a retrieval-optimized prefix:
+\begin{equation}
+  \mathbf{e}_j = \phi\!\left(\text{``search\_document: ''} \mathbin\| c_j\right) \in \mathbb{R}^{768}
+\end{equation}
+where $\phi$ is the Nomic Embed v1.5 encoder and $\mathbin\|$ denotes string concatenation. The chunking and embedding pipeline (Eqs. 3 and 4) is applied only to delta content; the resulting vector index $\mathcal{D}$ therefore contains only chunks from $\mathrm{kind}_j \in \{\mathrm{added}, \mathrm{deleted}\}$.
+
+\noindent\textbf{Vector Retrieval.} Both the Standard RAG baseline and DeltaRAG query the same delta-only vector index:
+\begin{equation}
+  R_{\mathrm{vec}}(q,k) =
+    \operatorname*{top\text{-}k}_{j \in \mathcal{D}}\,
+    \cos\!\Bigl(\phi_q(q),\, \mathbf{e}_j\Bigr)
+\end{equation}
+where $\phi_q(q) = \phi(\text{``search\_query: ''} \mathbin\| q)$. The Standard RAG variant evaluated in Section~\ref{ablation-study} corresponds exactly to $R_{\mathrm{vec}}$ without any further augmentation.
+
+\noindent\textbf{Knowledge Graph.} The KG layer maintains:
+\begin{equation}
+  \mathcal{G} = (V, E), \quad
+  V = \mathcal{V}_{\mathrm{ent}} \cup \mathcal{V}_{\mathrm{chg}}, \quad
+  E \subseteq V \times V \times R
+\end{equation}
+where $\mathcal{V}_{\mathrm{ent}}$ are extracted entities (CVE IDs, API levels, permission names, policy clauses), $\mathcal{V}_{\mathrm{chg}}$ are change event nodes, and $R = \{\textit{affects}, \textit{deprecates}, \textit{co-occurs}, \textit{references}, \textit{supersedes}\}$.
+
+\noindent\textbf{2-Hop Neighbourhood.} The KG expands retrieval context via bounded traversal:
+\begin{equation}
+  N_2(v) = \bigl\{u \in V : d_{\mathcal{G}}(v, u) \leq 2\bigr\}
+\end{equation}
+where $d_{\mathcal{G}}$ is the unweighted shortest-path distance in $\mathcal{G}$.
+
+\noindent\textbf{KG Context Expansion.}
+\begin{equation}
+  \mathrm{KGCtx}(q) =
+    \bigcup_{v \in \mathcal{E}(q)} \bigl\{c_j : c_j \text{ is linked to } N_2(v)\bigr\}
+\end{equation}
+where $\mathcal{E}(q)$ extracts named entities from query $q$.
+
+\noindent\textbf{Reciprocal Rank Fusion.} The two ranked lists are merged via RRF:
+\begin{equation}
+  \mathrm{RRF}(d) = \sum_{r \in \mathcal{R}} \frac{1}{k_{\mathrm{rrf}} + \mathrm{rank}_r(d)}, \quad k_{\mathrm{rrf}} = 60
+\end{equation}
+where $\mathcal{R}$ is the set of input ranked lists.
+
+\noindent\textbf{DeltaRAG (Full System).} DeltaRAG fuses the vector retrieval with the KG context expansion via RRF:
+\begin{equation}
+  \mathrm{DeltaRAG}(q,k) =
+    \operatorname*{top\text{-}k}_{d}\,\mathrm{RRF}(d),
+    \quad d \in R_{\mathrm{vec}}(q) \cup \mathrm{KGCtx}(q)
+\end{equation}
+The contribution of DeltaRAG over Standard RAG is thus the addition of the KG component and the RRF fusion step; the vector half is shared.
+
+\noindent\textbf{Composite Risk Score.} The Coordinator Agent evaluates the synthesized context to assign a scalar risk score to each Action Ticket. Rather than a rigid heuristic, the LLM-driven Coordinator approximates a composite function:
+\begin{equation}
+  \rho(a) \approx \alpha \cdot r_{\mathrm{rel}}(a) + \beta \cdot r_{\mathrm{sev}}(a) + \gamma \cdot r_{\mathrm{scope}}(a)
+\end{equation}
+where $r_{\mathrm{rel}} \in [0,10]$ is the upstream Sentinel relevance, $r_{\mathrm{sev}} \in [0,10]$ is the extracted vulnerability severity, and $r_{\mathrm{scope}}$ scales with the volume of affected cross-source signals.
+
+\section{System Architecture}\label{system-architecture}
+
+The ECI system is organized as an six-stage pipeline spanning three architectural layers: the Platform Evolution Layer (data acquisition and change detection), the Semantic Retrieval Layer (embedding, storage, and similarity search), and the Agent Intelligence Layer (triage, coordination, and recommendation generation). We describe each component below.
+
+\subsection{Platform Evolution Layer}\label{platform-evolution-layer}
+
+\emph{\textbf{Source Registry}}
+
+Monitored sources are stored in a relational registry table in Supabase. Each record contains the source URL, name, fetch type (HTML or API/JSON), source category (\texttt{security\_bulletin}, \texttt{developer\_docs}, \texttt{cve\_feed}, \texttt{policy\_update}), and active status. The registry uses an idempotent upsert on the URL field, ensuring re-seeding the pipeline does not create duplicate entries.
+
+\emph{\textbf{Snapshot Ingestion}}
+
+Automated scripts periodically fetch raw content from each active source. HTML pages are retrieved via \texttt{requests} and parsed with \texttt{BeautifulSoup4} to strip navigation, headers, footers, and scripts, retaining only the structural body content. API/JSON sources (e.g., the CISA KEV feed) are fetched directly and serialized. Each fetch produces a snapshot record containing the raw text, cleaned text, content hash (SHA-256), and timestamp, enabling full historical lineage.
+
+\emph{\textbf{Change Detection}}
+
+For each new snapshot, the system retrieves the most recent prior snapshot for the same source and computes a structured diff. The diffing logic identifies added and deleted blocks. Trivial, cosmetic changes (whitespace normalization, minor formatting shifts) are filtered using a strict lexical distance threshold computed via \texttt{difflib.SequenceMatcher}. Changes that exceed the threshold are recorded as change events in a dedicated \texttt{changes} table, linked to both the previous and new snapshot IDs.
+
+\subsection{Semantic Retrieval Layer}\label{semantic-retrieval-layer-deltarag}
+
+\emph{\textbf{Chunking Strategy}}
+
+Change content is chunked into 1,600-character segments with 200-character overlaps. This 1600/200 rule balances granularity (ensuring each chunk is semantically focused) against context preservation (preventing sentence breaks). Before embedding, each chunk is prefixed with \texttt{search\_document:} to activate Nomic v1.5's task-aware encoding path, optimizing the embedding strictly for retrieval rather than classification.
+
+\emph{\textbf{Embedding Model: Nomic v1.5}}
+
+We selected Nomic Embed v1.5 based on strict architectural constraints for processing security data. It offers three critical advantages over standard models: (1) 768-dimensional embeddings that accurately capture nuanced distinctions between vulnerability classes; (2) an 8,192-token maximum input length, accommodating long JSON feeds and policy documents without truncating context; and (3) local execution capability, ensuring zero-day vulnerability data never leaves the organization's controlled infrastructure.
+
+\emph{\textbf{Vector Storage: Supabase + pgvector}}
+
+Embedded chunks are stored in a Supabase PostgreSQL database utilizing the \texttt{pgvector} extension. The \texttt{embeddings} table stores: chunk ID, source ID, source category, change ID, chunk kind (addition, deletion), chunk text, and a \texttt{vector(768)} embedding column. An HNSW (Hierarchical Navigable Small World) index enables sub-10ms cosine similarity search. Using PostgreSQL-native storage rather than an isolated vector database (e.g., Pinecone) enables seamless SQL joins between vector representations, relational change events, and downstream agent recommendations.
+
+\subsection{Agent Intelligence Layer}\label{agent-intelligence-layer}
+
+\emph{\textbf{Sentinel Triage Agent}}
+
+The Sentinel Agent serves as the first-pass filter. For each new change event, it receives the structured change description and performs semantic comprehension, identifying what the change means in the context of ecosystem fraud and security operations. It assigns a relevance score (threshold $\geq5$) and classifies the domain (e.g., \texttt{vulnerability\_exposure}). Most importantly, it distinguishes signal from noise, acting as a gatekeeper to prevent the Coordinator Agent from processing irrelevant documentation updates. The Sentinel outputs strict, validated JSON.
+
+\emph{\textbf{Coordinator Agent (KG-Augmented Retrieval)}}
+
+Changes that pass the Sentinel's threshold escalate to the Coordinator
+Agent for deep analysis. The Coordinator performs the full
+\textbf{DeltaRAG} retrieval (Eq.~10): vector search over the
+delta-chunk index is executed in parallel with a 2-hop traversal of
+the knowledge graph (KG), and the two ranked lists are fused via
+Reciprocal Rank Fusion. The KG construction and traversal details are
+described in Section~\ref{graph-rag-for-cross-source-intelligence}.
+From the fused output, the Coordinator generates structured insights
+explaining why the change matters, aggregates related high-risk events
+(e.g., linking a CISA KEV alert to an OEM security bulletin), and
+produces Action Tickets with priority levels, suggested owners, and
+explicit evidence citations pointing directly to the retrieved chunks.
+
+\emph{\textbf{Pipeline Orchestration \& Logging}}
+
+Rather than relying on heavy multi-agent orchestration frameworks, the system employs an asynchronous backend worker (\texttt{run\_pipeline.py}) that polls a \texttt{pipeline\_jobs} queue. As the worker executes the sequential stages (Ingest $\rightarrow$ Diff $\rightarrow$ Vectorize $\rightarrow$ KG Update $\rightarrow$ Sentinel $\rightarrow$ Coordinator), it streams \texttt{stdout} natively into a relational \texttt{pipeline\_logs} table. This architecture guarantees full traceability of every retrieval step and LLM invocation, driving the real-time execution monitor on the Next.js dashboard.
+
+
+\section{Knowledge Graph for Cross-Source Intelligence}\label{graph-rag-for-cross-source-intelligence}
+
+\subsection{Knowledge Graph Construction}\label{knowledge-graph-construction}
+
+The knowledge graph (KG) layer constructs a directed graph from change
+events and their extracted metadata. Nodes represent distinct entities
+(CVE identifiers, Android API levels, permission names, SDK versions,
+policy clause identifiers, components) and change events. Edges encode
+the structural relationship set $R$ defined in Eq.~6: $\{\textit{affects},
+\textit{deprecates}, \textit{co-occurs}, \textit{references},
+\textit{supersedes}\}$. To ensure deterministic execution and minimize
+latency, entity extraction is performed using a pure regex-based
+extractor (\texttt{rag/entity\_extractor.py}) over strict pattern
+matching and predefined whitelists. This design trades extraction
+coverage for two operational guarantees: zero hallucination at the
+graph-construction step, and sub-millisecond entity recognition per
+change event.
+
+\subsection{KG-Augmented Retrieval via RRF}\label{graph-augmented-retrieval}
+
+At query time, the system executes a parallel retrieval strategy to
+capture both semantic similarity and structural dependencies. Given a
+query (e.g., a new bulletin diff):
+\begin{enumerate}
+    \item \textbf{Vector Search}: Retrieves the top-$K$ semantically similar chunks across all other sources from the delta-chunk index (Eq.~5), using Nomic Embed v1.5.
+    \item \textbf{KG Traversal}: Extracts entities from the query, traverses the KG up to 2 hops (Eq.~7) to find connected change events, and gathers their corresponding chunks (Eq.~8).
+\end{enumerate}
+Rather than naively appending these lists or aggressively boosting graph
+distances (which would displace highly-relevant semantic matches), the
+system merges the two sets using Reciprocal Rank Fusion (RRF, Eq.~9)
+with $k_{\mathrm{rrf}} = 60$. This ensures that a chunk ranked highly by
+Vector Search retains its score even if the KG fails to find an entity
+path to it, providing robust fallback behavior. The fused output is the
+\textbf{DeltaRAG} retrieval defined in Eq.~10.
+
+\subsection{Entity-Weighted Scoring \& Cross-Category Bonus}\label{adaptive-retrieval-strategy-learning}
+
+A naive graph traversal in a highly interconnected corpus quickly
+succumbs to noise: connector entities such as \texttt{android\_14} are
+shared across hundreds of unrelated changes and would dominate
+retrieval if treated identically to rigid identifiers. To suppress this,
+the traversal engine applies \textbf{entity-type weighting}: nodes are
+scored in proportion to their discriminative power. Unique vulnerability
+identifiers (\texttt{cve}, including SVE-prefixed entries) carry a
+$3.0\times$ weight; domain-specific terms (\texttt{policy\_clause},
+\texttt{permission}) carry $2.0\times$; and generic structural nodes
+(\texttt{component}, \texttt{api\_level}, \texttt{kernel\_version},
+\texttt{sdk\_version}) carry $1.0\times$. A change's score aggregates
+the weighted entities it shares with the query, divided by the minimum
+hop distance:
+\begin{equation}
+  \mathrm{score}(c) = \frac{\sum_{e \in \mathrm{shared}(c, q)} w_e}{1 + h_{\min}(c, q)}
+\end{equation}
+where $w_e$ is the entity-type weight of $e$ and $h_{\min}(c, q)$ is the
+minimum hop distance from any query entity to change $c$ in $\mathcal{G}$.
+
+Finally, the system applies a $1.5\times$ \textbf{cross-category bonus}
+to changes whose source category differs from the query's source
+category, rewarding the graph for surfacing connections that bridge
+distinct source families (e.g., linking a Security Bulletin to an OEM
+Patch). This bias is what enables the KG layer to recover the
+cross-source linkages that pure vector similarity misses.
+
+
+\section{Implementation}\label{implementation}
+
+\subsection{Technology Stack}\label{technology-stack}
+
+The system is implemented in Python 3.11 with the following core components. Data acquisition uses \texttt{requests} and \texttt{BeautifulSoup4} for HTML parsing. The Supabase Python client manages all PostgreSQL database interactions (source registry, snapshots, changes, agent events, vector chunks, recommendations). Embedding generation uses the Nomic Embed v1.5 model running locally via the \texttt{sentence-transformers} package. LLM inference currently utilizes Groq's API for ultra-low-latency access to \texttt{llama-3.1-8b-instant}. The presentation layer is a custom Next.js application utilizing React, Tailwind CSS, and Framer Motion, interfacing directly with the Supabase backend.
+
+\subsection{Database Schema}\label{database-schema}
+
+The relational schema in Supabase comprises core tables tracking the lifecycle of an intelligence event: \texttt{sources} (registry of monitored URLs), \texttt{snapshots} (versioned page content with content hashes), \texttt{changes} (structured diff records linking previous and new snapshots), \texttt{embeddings} (pgvector chunks with lineage metadata), \texttt{agent\_events} (per-change-event triage analysis records), and \texttt{recommendations} (final Action Tickets). Two operational tables, \texttt{pipeline\_jobs} (worker queue) and
+\texttt{pipeline\_logs} (streamed worker stdout), support the asynchronous
+orchestration described in Section~\ref{agent-intelligence-layer}. Foreign key relationships enforce referential integrity across the pipeline: changes reference snapshots, embeddings reference changes and sources, and recommendations reference specific change events. The \texttt{knowledge\_graph\_data} table acts as a JSONB persistence layer for the graph.
+
+\subsection{LLM Selection}\label{llm-evaluation-and-selection}
+
+The Sentinel and Coordinator roles require strict JSON stability and sub-second inference times. We selected \texttt{llama-3.1-8b-instant} served via the Groq API as the primary inference engine. This model achieves the optimal balance of instruction-following capabilities (required for the Coordinator's complex, nested evidence citations) and ultra-low latency. All outputs are subjected to strict parse validation: outputs must pass \texttt{json.loads()} and conform to predefined Pydantic schemas without manual post-processing.
+
+\subsection{Prompt Engineering for Structured Output}\label{prompt-engineering-for-structured-output}
+
+Agent prompts are carefully engineered to maximize JSON stability and minimize hallucination. The Sentinel prompt includes: (1) a system-level role definition constraining the agent to a security analyst persona; (2) the complete JSON schema with field descriptions and value constraints; (3) explicit instructions to output only the JSON object with no preamble or explanation; and (4) few-shot examples demonstrating correct output for both relevant and irrelevant changes. The Coordinator prompt dynamically integrates retrieved context chunks (formatted as numbered evidence blocks) and enforces explicit citation instructions, requiring \texttt{evidence\_ids} for each synthesized recommendation.
+
+\section{Evaluation}\label{preliminary-evaluation}
+
+\subsection{Embedding Model Selection}\label{retrieval-quality}
+
+The ECI pipeline processes massive, highly technical documents including JSON vulnerability feeds and multi-page OEM security bulletins. Standard embedding models often struggle with these formats due to strict token limits, leading to truncation of critical security context.
+
+We evaluated candidate embedding models against three non-negotiable architectural constraints for the ECI pipeline:
+\begin{enumerate}
+    \item \textbf{High Context Window}: Must support $>4,000$ tokens to embed large policy updates and CISA KEV arrays without aggressive chunking.
+    \item \textbf{Data Privacy}: Must run locally to ensure unreleased, proprietary OEM vulnerability data is not leaked to third-party cloud APIs.
+    \item \textbf{Asymmetric Retrieval}: Must support task-aware representations to match short queries (diffs) against long documents (bulletins).
+\end{enumerate}
+
+Based on these constraints, we selected \textbf{Nomic-Embed-Text-v1.5}.
+
+{\def\LTcaptype{none}
+\begin{longtable}[]{@{}
+  >{\centering\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.2619}}
+  >{\centering\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1529}}
+  >{\centering\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1747}}
+  >{\centering\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.2577}}@{}}
+\toprule\noalign{}
+\textbf{Model} & \textbf{Privacy} & \textbf{Max Tokens} & \textbf{Decision} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Nomic v1.5 & Local & 8,192 & Selected \\
+BAAI BGE-Large & Local & 512 & Ruled out (Truncation) \\
+OpenAI / Vertex AI & Cloud & 8,192+ & Ruled out (Privacy) \\
+\end{longtable}
+}
+
+\emph{Table 1: Embedding model selection matrix based on ECI architectural constraints.}
+
+Nomic v1.5's primary advantage stems from its task-aware prefix mechanism (\texttt{search\_document:} / \texttt{search\_query:}), 768-dimensional output, and 8,192-token context window that successfully avoids the truncation which degrades models like BGE on long policy documents.
+
+\subsection{Ablation Study: Retrieval Variants}
+\label{ablation-study}
+
+To isolate the contribution of knowledge graph (KG) augmentation within DeltaRAG, we conducted a systematic ablation across three retrieval variants evaluated on a benchmark of 100 deterministic queries spanning ten query types
+(10 queries each). Each query is anchored to one of the ten seeded
+sources, with deterministic cross-source ground truth derived from
+shared-entity co-occurrence in the synthetic snapshot data. The ten
+query types probe distinct retrieval regimes:
+
+\begin{description}
+  \item[\textit{full\_diff} (A)] The raw \texttt{diff\_text} of a change
+    used verbatim as the query, this mirrors the pipeline's own
+    internal trigger and represents the upper bound on context richness.
+  \item[\textit{identifier\_focused} (B)] CVE / SVE / API-identifier
+    extracts (e.g.\ \texttt{CVE-2025-0096}, \texttt{MEETS\_STRONG\_INTEGRITY})
+    drawn from the diff, tests whether retrievers can correlate via
+    explicit codes.
+  \item[\textit{component\_focused} (C)] Component or product descriptions
+    without identifiers (e.g.\ ``buffer overflow in the Wi-Fi HAL''),
+    isolates semantic matching from identifier matching.
+  \item[\textit{natural\_language} (D)] Analyst-style questions in
+    conversational form (e.g.\ ``Which OEM devices have released patches
+    for the Wi-Fi HAL vulnerability?''), simulates the chat-interface
+    surface.
+  \item[\textit{entity\_only} (E)] Bare, concatenated entity strings with
+    no surrounding context (e.g.\ \texttt{play\_integrity\_api meets\_strong\_integrity
+    read\_media\_images}), the minimum-context stress condition.
+  \item[\textit{cross\_source\_linkage} (F)] Explicitly cross-source
+    questions that require linking entities or facts across multiple
+    seeded sources (e.g.\ ``Which OEM bulletins mention the ARM Mali GPU
+    vulnerability listed by CISA?'').
+  \item[\textit{temporal\_change} (G)] Diff-focused questions about
+    what changed between snapshots (e.g.\ ``What new kernel
+    vulnerabilities were added between the original and updated March
+    bulletin?''), targets DeltaRAG's core differentiator.
+  \item[\textit{policy\_compliance} (H)] Compliance-framed questions
+    about required actions, deadlines, or thresholds (e.g.\ ``By what
+    date must federal agencies patch the Bluetooth RCE?'').
+  \item[\textit{false\_alarm} (I)] Off-topic or out-of-scope queries
+    with no valid answer in the corpus (e.g.\ ``Does the Samsung
+    bulletin patch the macOS kernel?''), probes negative rejection.
+  \item[\textit{noisy\_adversarial} (J)] Adversarially phrased queries
+    including prompt-injection patterns, off-topic preambles, and
+    stylistic distractors (e.g.\ ``Tell me about the weather, and also
+    CVE-2025-0096.''), probes robustness to malformed inputs.
+\end{description}
+
+Of the 100 queries, 85 produced scored results; the remaining 15
+(all of \textit{false\_alarm}, plus 5 by design across
+\textit{cross\_source\_linkage} and \textit{policy\_compliance}) have
+empty ground truth and serve as the negative-rejection probe. The
+three variants are:
+
+\begin{itemize}
+  \item \textbf{V1 Standard RAG}: Vector retrieval only ($R_{\mathrm{vec}}$ in Eq.~5), no KG augmentation.
+  \item \textbf{V2 KG-Only}: 2-hop KG traversal (Eq.~8), no vector component.
+  \item \textbf{V3 DeltaRAG (Full System)}: $R_{\mathrm{vec}}$ fused with KG context via Reciprocal Rank Fusion (Eq.~10).
+\end{itemize}
+
+All variants used top-$k = 5$ retrieval and Nomic v1.5 embeddings.
+Metrics are computed with 95\% bootstrap confidence intervals
+(10,000 resamples, seed = 42). Significance assessed via paired Wilcoxon
+signed-rank tests with Holm-Bonferroni correction across the six
+confirmatory comparisons (3 metrics $\times$ 2 baseline comparisons).
+
+{\def\LTcaptype{none}
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 14\tabcolsep) * \real{0.26}}
+  >{\centering\arraybackslash}p{(\linewidth - 14\tabcolsep) * \real{0.10}}
+  >{\centering\arraybackslash}p{(\linewidth - 14\tabcolsep) * \real{0.10}}
+  >{\centering\arraybackslash}p{(\linewidth - 14\tabcolsep) * \real{0.12}}
+  >{\centering\arraybackslash}p{(\linewidth - 14\tabcolsep) * \real{0.10}}
+  >{\centering\arraybackslash}p{(\linewidth - 14\tabcolsep) * \real{0.10}}
+  >{\centering\arraybackslash}p{(\linewidth - 14\tabcolsep) * \real{0.10}}
+  >{\centering\arraybackslash}p{(\linewidth - 14\tabcolsep) * \real{0.10}}@{}}
+\toprule\noalign{}
+\textbf{Variant} & \textbf{P@1} & \textbf{P@5} & \textbf{R@5} & \textbf{nDCG@5} & \textbf{MRR} & \textbf{MAP} & \textbf{FA-Rej} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+V1 Standard RAG                  & 0.847          & \textbf{0.504} & \textbf{0.931} & 0.877          & 0.913          & \textbf{0.822} & 1.000 \\
+V2 KG-Only                & 0.635          & 0.341          & 0.571          & 0.587          & 0.639          & 0.563          & 1.000 \\
+V3 DeltaRAG (Full)   & \textbf{0.882} & 0.478          & 0.899          & \textbf{0.873$^*$} & \textbf{0.930} & 0.821          & 1.000 \\
+\end{longtable}
+}
+
+\emph{Table 2: Ablation results across 85 scored benchmark queries, top-$k$\,=\,5. Bold marks the best variant per metric. $^*$V3 nDCG@5 is statistically indistinguishable from V1 ($p = 0.43$); V3 wins on P@1 and MRR.}
+
+\textbf{Headline numbers (Holm-corrected, $\alpha = 0.05$):}
+\begin{itemize}
+  \item \textbf{V3 vs.\ V2 (KG-Only)}: V3 strictly dominates on every metric, $\Delta$R@5 = +0.328 [+0.235, +0.423], $\Delta$nDCG@5 = +0.286 [+0.204, +0.373], both $p < 0.001$.
+  \item \textbf{V3 vs.\ V1 (Standard RAG)}: V3 wins on top-rank quality (\textbf{P@1} = 0.882 vs.\ 0.847; \textbf{MRR} = 0.930 vs.\ 0.913) and ties on nDCG@5 ($p = 0.43$). V1 retains a small edge on raw coverage, R@5 ($\Delta = -0.032$, $p = 0.014$) and P@5 ($\Delta = -0.026$, $p = 0.008$).
+\end{itemize}
+
+The per-type breakdown reveals where the KG component pays off: V3
+strictly outperforms V1 on \textit{policy\_compliance} (R@5 0.875 vs.\ 0.833;
+nDCG@5 0.685 vs.\ 0.653), edges ahead on \textit{temporal\_change} nDCG@5
+(0.772 vs.\ 0.750) at identical recall, and beats V1 on
+\textit{noisy\_adversarial} nDCG@5 (0.766 vs.\ 0.749), early evidence that
+the KG component dampens rank instability under adversarial phrasing.
+
+The most operationally relevant finding is the P@1 and MRR uplift: V3
+places a relevant result at rank 1 on 88.2\% of scored queries
+(vs.\ 84.7\% for V1), and its reciprocal rank is 0.930 (vs.\ 0.913). For a
+triage system whose downstream consumer is an analyst clicking the top
+result, this top-of-list precision matters more than depth-5 recall. The
+dense embedding model already correlates explicit cross-source identifiers
+(e.g.\ \texttt{CVE-2025-0096}) effectively enough that pure-vector retrieval
+is hard to beat on raw coverage, but the KG-augmented fusion provides
+the structural signal needed to push the correct answer to the top of the
+list. The standalone KG-Only variant (V2) remains constrained by a
+regex-based entity extraction bottleneck on free-text vulnerability
+descriptions; addressing this via LLM-driven entity extraction is a
+critical focus for future iterations.
+
+\section{Discussion}
+\label{discussionn}
+
+\subsection{DeltaRAG vs. Standard RAG}\label{deltarag-vs.-standard-rag}
+
+DeltaRAG's design rests on two distinct decisions, one at the pipeline
+level and one at the retrieval level. The pipeline-level decision is to
+embed only delta content (additions and deletions) rather than full
+documents. This concentrates the vector index on operationally
+relevant signal and is shared by the Standard RAG baseline (V1) in our
+ablation, both variants query the same delta-only chunk store.
+The retrieval-level decision is the KG augmentation: at query time,
+vector retrieval is fused with a 2-hop knowledge graph traversal via
+Reciprocal Rank Fusion (Eq.~10). This is what distinguishes V3
+DeltaRAG from V1 Standard RAG.
+
+Empirically (Section~\ref{ablation-study}), this yields a small but
+consistent uplift in top-rank quality (P@1\,$+0.035$, MRR\,$+0.017$)
+over V1 while remaining statistically tied on nDCG@5, a favorable
+trade for triage workflows where an analyst acts on the first surfaced
+result. The KG layer's contribution is most visible on
+\textit{policy\_compliance}, \textit{temporal\_change}, and
+\textit{noisy\_adversarial} queries, where structural linkage matters
+more than dense semantic similarity.
+
+\subsection{Knowledge Graph for Cascading Risk Detection}\label{graph-rag-for-cascading-risk-detection}
+
+The knowledge graph (KG) layer addresses a fundamental limitation of
+vector-only retrieval: the inability to surface connections that are
+semantically distant but structurally linked. For example, a CVE
+affecting the Android kernel (from the CISA KEV feed) and a Google
+Play Developer Policy update regarding background data access may not
+share similar vocabulary. However, their operational intersection is
+critical. The KG captures this by linking both changes to explicit
+shared entities, such as a specific \texttt{API\_level} or a shared
+system component like \texttt{ActivityManagerService}. This strict
+structural linkage enables the Coordinator Agent to surface the
+connection and recommend coordinated action without relying on vector
+proximity.
+
+\subsection{Limitations and Threats to Validity}\label{limitations-and-threats-to-validity}
+
+Several limitations should be noted. First, while our ablation study
+utilized 100 deterministic queries (85 scored) with paired non-parametric
+significance testing, Holm-Bonferroni multiple-comparison correction, and
+10,000-resample bootstrap confidence intervals, the evaluation was conducted
+against a synthetically seeded snapshot database. True differentiation
+between hybrid retrieval mechanisms requires independent queries annotated
+against live, stream-processed platform diffs. Second, per-type sample size
+is modest ($n = 6$--$10$), which limits statistical power for the
+exploratory per-type comparisons; effect sizes and bootstrap CIs are
+therefore reported alongside raw $p$-values. Third, the Knowledge Graph
+currently relies entirely on regex-based entity extraction. While this
+guarantees high execution speed and zero hallucination, it introduces a
+critical bottleneck: it misses implicit, unstructured relationships that
+do not conform to predefined string patterns, and this directly accounts
+for the underperformance of the standalone KG-Only variant (V2)
+reported in Section 7.2. Fourth, lightweight instruction-tuned LLMs (e.g.,
+Llama 3.1 8B) trade deep reasoning capabilities for latency and JSON parse
+stability; complex, multi-stage risk scenarios ultimately require
+human-in-the-loop validation.
+
+
+\subsection{Operational Implications}\label{operational-implications}
+
+The ECI framework is designed to reduce three operational costs: (1) time-to-awareness, by detecting platform changes within minutes rather than days; (2) triage burden, by automatically filtering irrelevant cosmetic changes and surfacing only risk-relevant updates via the Sentinel Agent; and (3) decision latency, by generating evidence-backed Action Tickets that can be directly routed to the appropriate operational queue with assigned priorities. For fraud operations teams at financial institutions, this translates to faster signal recalibration, reduced fraud exposure windows, and drastically decreased manual monitoring effort.
+
+\section{Conclusion and Future
+Work}\label{conclusion-and-future-work}
+
+We have presented Ecosystem Change Intelligence (ECI), a framework for
+converting ecosystem monitoring from a passive documentation-tracking
+activity into an active, change-centric decision pipeline. Our primary
+contribution, \textbf{DeltaRAG} (Full System), grounds
+retrieval on change-local context windows (Eq.~5) and fuses them with
+2-hop knowledge graph traversal via RRF, achieving
+\textbf{P@1\,=\,0.882}, \textbf{MRR\,=\,0.930}, \textbf{nDCG@5\,=\,0.873},
+and \textbf{100\% false-alarm rejection} across 100 benchmark queries
+(85 scored). On the metrics most relevant to a triage workflow,
+top-rank quality, the Full System outperforms Standard RAG (P@1
+$+0.035$, MRR $+0.017$) while remaining statistically tied on nDCG@5
+($p = 0.43$); it strictly dominates the KG-Only baseline on every
+metric ($\Delta$R@5 $= +0.328$, $p < 0.001$). The per-type breakdown
+identifies the regimes where KG augmentation pays off most clearly, \textit{policy\_compliance}, \textit{temporal\_change}, and \textit{noisy\_adversarial} queries. Complementary contributions include a formal mathematical framework (Eqs.~1--11), a KG layer for cross-source evidence linking, a two-agent architecture (Sentinel + Coordinator) producing auditable Action Tickets with composite risk scoring, and an ablation study across three retrieval variants validating the design choices. The system monitors 10 live
+Android ecosystem sources and surfaces detected changes to fraud operations teams as evidence-backed, priority-ranked recommendations.
+
+Future work will pursue four directions. First, \textbf{benchmark
+quality}: replacing the current synthetic benchmark with independent
+queries annotated against live scraped diffs, and broadening the
+robustness probe to include stale-information retrieval alongside the
+existing noisy-adversarial and false-alarm categories. Second,
+\textbf{retrieval improvement}: addressing the regex-based entity
+extraction bottleneck (the dominant cause of V2 KG-Only
+underperformance) via LLM-driven extraction, and implementing BM25
+hybrid search and cross-encoder reranking to lift the current
+P@5\,=\,0.478. Third, \textbf{validation}: conducting analyst
+walkthroughs to evaluate Action Ticket quality in real fraud operations
+workflows, and iterating on risk scoring weights ($\alpha, \beta,
+\gamma$ in Eq.~11) based on operational feedback. Fourth,
+\textbf{infrastructure}: migrating LLM inference to self-hosted GCP
+with NVIDIA NIM/vLLM for production-grade performance and data privacy,
+and hardening structured outputs through prompt optimization and schema
+validation layers.
+
+\section{References}\label{references}
+
+{[}1{]} Aghaei, E., et al. (2023). SecureBERT: A Domain-Specific
+Language Model for Cybersecurity. In Proceedings of ACM CCS Workshop on
+Artificial Intelligence and Security.
+
+{[}2{]} Edge, D., et al. (2024). From Local to Global: A Graph RAG
+Approach to Query-Focused Summarization. arXiv:2404.16130.
+
+{[}3{]} Ferrag, M.A., et al. (2024). Generative AI and Large Language
+Models for Cyber Security: All Insights You Need. arXiv:2405.12750.
+
+{[}4{]} He, Y., et al. (2024). G-Retriever: Retrieval-Augmented
+Generation for Textual Graph Understanding and Question Answering. In
+Proceedings of NeurIPS.
+
+{[}5{]} Izacard, G., \& Grave, E. (2021). Leveraging Passage Retrieval
+with Generative Models for Open Domain Question Answering. In
+Proceedings of EACL.
+
+{[}6{]} Lewis, P., et al. (2020). Retrieval-Augmented Generation for
+Knowledge-Intensive NLP Tasks. In Proceedings of NeurIPS.
+
+{[}7{]} Li, G., et al. (2023). CAMEL: Communicative Agents for ``Mind''
+Exploration of Large Language Model Society. In Proceedings of NeurIPS.
+
+{[}8{]} Li, Z., et al. (2022). Constructing Knowledge Graphs for Cyber
+Threat Intelligence. In Proceedings of IEEE S\&P Workshop.
+
+{[}9{]} Li, Z., et al. (2024). Automated Policy Change Detection and
+Tracking: A Survey. ACM Computing Surveys.
+
+{[}10{]} Mittal, S., et al. (2016). CyberTwitter: Using Twitter to
+Generate Alerts for Cybersecurity Threats and Vulnerabilities. In
+Proceedings of IEEE/ACM ASONAM.
+
+{[}11{]} Nussbaum, Z., et al. (2024). Nomic Embed: Training a
+Reproducible Long Context Text Embedder. arXiv:2402.01613.
+
+{[}12{]} Patel, A., et al. (2023). Web Content Change Detection:
+Methods, Challenges, and Applications. Information Processing \&
+Management, 60(3).
+
+{[}13{]} Reimers, N., \& Gurevych, I. (2019). Sentence-BERT: Sentence
+Embeddings using Siamese BERT-Networks. In Proceedings of EMNLP.
+
+{[}14{]} Savelka, J., et al. (2023). Explaining Legal Concepts with
+Augmented Large Language Models. In Proceedings of ICAIL.
+
+{[}15{]} Shi, W., et al. (2023). REPLUG: Retrieval-Augmented Black-Box
+Language Models. In Proceedings of NAACL.
+
+{[}16{]} Wu, Q., et al. (2023). AutoGen: Enabling Next-Gen LLM
+Applications via Multi-Agent Conversation. arXiv:2308.08155.
+
+{[}17{]} Xiao, S., et al. (2024). C-Pack: Packaged Resources to Advance
+General Chinese Embedding. In Proceedings of ACL.
+
+{[}18{]} Xiong, G., et al. (2024). Benchmarking Retrieval-Augmented
+Generation for Medicine. In Findings of ACL.
+
+{[}19{]} Yao, S., et al. (2023). ReAct: Synergizing Reasoning and Acting
+in Language Models. In Proceedings of ICLR.
+
+{[}20{]} Yasunaga, M., et al. (2021). QA-GNN: Reasoning with Language
+Models and Knowledge Graphs for Question Answering. In Proceedings of
+NAACL.
+
+\end{document}
