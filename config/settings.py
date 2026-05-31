@@ -7,11 +7,18 @@ from dotenv import load_dotenv
 # Load .env file (GROQ_API_KEY, etc.)
 load_dotenv(Path(__file__).parent.parent / ".env")
 
+# ── Evaluation isolation ──────────────────────────────────────────
+# When ECI_EVAL is set, the evaluation harness runs against a fully
+# local, separate database (SQLite + Chroma) so seeding/ablation can
+# never wipe or mutate the live Supabase instance. The eval entrypoints
+# set this before importing anything that reads these settings.
+ECI_EVAL = os.environ.get("ECI_EVAL", "").lower() in ("1", "true", "yes")
+
 # Paths
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
-SQLITE_DB_PATH = DATA_DIR / "eci.db"
-CHROMA_PERSIST_DIR = str(DATA_DIR / "chroma_store")
+SQLITE_DB_PATH = DATA_DIR / ("eci_eval.db" if ECI_EVAL else "eci.db")
+CHROMA_PERSIST_DIR = str(DATA_DIR / ("chroma_eval" if ECI_EVAL else "chroma_store"))
 SOURCES_FILE = PROJECT_ROOT / "config" / "sources.json"
 KNOWLEDGE_GRAPH_PATH = DATA_DIR / "knowledge_graph.json"
 
@@ -20,6 +27,8 @@ DATA_DIR.mkdir(exist_ok=True)
 
 # ── Supabase / PostgreSQL ─────────────────────────────────────────
 USE_SUPABASE = os.environ.get("USE_SUPABASE", "true").lower() == "true"
+if ECI_EVAL:
+    USE_SUPABASE = False  # isolation: evaluation never touches Supabase
 
 SUPABASE_URL = os.environ.get(
     "DATABASE_URL",

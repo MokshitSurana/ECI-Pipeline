@@ -57,7 +57,8 @@ def retrieve_context(query: str, top_k: int = 5, source_filter: int = None,
     }
 
 
-def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5) -> dict:
+def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5,
+                       rrf_k: int = 60) -> dict:
     """Graph-RAG retrieval: combine vector similarity with knowledge graph traversal.
 
     This replaces the old retrieve_cross_source() with true Graph-RAG:
@@ -133,8 +134,9 @@ def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5) -> dict
     #
     # score(chunk) = 1/(rrf_k + rank_in_rag) + 1/(rrf_k + rank_in_graph)
     #
-    # rrf_k=60 is the standard constant from the original RRF paper.
-    RRF_K = 60
+    # rrf_k=60 is the standard constant from the original RRF paper; it is
+    # parameterized here so the sensitivity sweep can vary the fusion constant.
+    RRF_K = rrf_k
 
     # Build rank maps (chunk_id → 1-indexed rank)
     rag_rank = {}

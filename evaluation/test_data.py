@@ -4,6 +4,11 @@ Creates synthetic but realistic snapshots and changes based on
 actual Android Security Bulletin and CISA KEV patterns.
 Run this instead of scraper.py when testing locally.
 """
+import os
+# Isolation: seeding runs against the separate local eval DB, never Supabase.
+# Must be set before any config-reading import.
+os.environ["ECI_EVAL"] = "1"
+
 from datetime import datetime, timezone, timedelta
 from utils.db import get_session, init_db, Source, Snapshot, Change
 from scripts.seed_sources import seed_sources

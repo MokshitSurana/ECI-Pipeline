@@ -1,6 +1,6 @@
 """Ablation Study: Evaluate Vanilla RAG vs Graph-Only vs DeltaRAG.
 
-Runs 50 golden queries across 5 query types and 10 sources.
+Runs 100 golden queries across 10 query types and 10 sources.
 Computes per-query IR metrics, aggregates by query type with mean/std,
 and reports paired significance tests with bootstrap confidence intervals.
 
@@ -10,6 +10,11 @@ Statistical methodology:
     - Exploratory: per-type tests reported with raw p-values and 95% CIs.
     - Bootstrap: 10,000 resamples on paired deltas, percentile CIs, seeded.
 """
+import os
+# Isolation: force the evaluation harness onto a separate local DB so it can
+# never wipe the live Supabase. Must be set before any config-reading import.
+os.environ["ECI_EVAL"] = "1"
+
 import argparse
 import math
 import random
@@ -91,6 +96,34 @@ def compute_ndcg(top_k_sids: List[int], expected: set, k: int) -> float:
         return 1.0 if dcg == 0 else 0.0
     return dcg / idcg
 
+
+def compute_p_at_1(top_k_sids: List[int], expected: set) -> float:
+    """P@1: 1.0 if the first retrieved item is relevant, else 0.0."""
+    if not top_k_sids:
+        return 0.0
+    return 1.0 if top_k_sids[0] in expected else 0.0
+
+
+def compute_mrr(top_k_sids: List[int], expected: set) -> float:
+    """Reciprocal rank of the first relevant item in top_k. 0.0 if none."""
+    for idx, sid in enumerate(top_k_sids):
+        if sid in expected:
+            return 1.0 / (idx + 1)
+    return 0.0
+
+
+def compute_map(top_k_sids: List[int], expected: set) -> float:
+    """Average Precision over top_k. Denominator is |expected| (standard AP@k)."""
+    if not expected:
+        return 1.0
+    hits = 0
+    precision_sum = 0.0
+    for idx, sid in enumerate(top_k_sids):
+        if sid in expected:
+            hits += 1
+            precision_sum += hits / (idx + 1)
+    return precision_sum / len(expected)
+
 # ── Retrieval Algorithms ─────────────────────────────────────────
 
 def run_vanilla_rag(query_text: str, source_id: int, top_k: int) -> List[int]:
@@ -137,9 +170,10 @@ def run_graph_only(query_text: str, source_id: int, top_k: int, kg: KnowledgeGra
     return gathered
 
 
-def run_deltarag(query_text: str, source_id: int, top_k: int) -> List[int]:
+def run_deltarag(query_text: str, source_id: int, top_k: int,
+                 rrf_k: int = 60) -> List[int]:
     """The full Graph-RAG pipeline (RRF fusion of RAG + Graph)."""
-    res = retrieve_graph_rag(query_text, source_id, top_k=top_k)
+    res = retrieve_graph_rag(query_text, source_id, top_k=top_k, rrf_k=rrf_k)
     return [c["metadata"].get("source_id") for c in res["chunks"]]
 
 # ── Statistics ───────────────────────────────────────────────────
@@ -235,7 +269,8 @@ def assert_expected_db_state():
 # ── The Evaluation Runner ────────────────────────────────────────
 
 def run_ablation_study(k: int = 5, do_seed: bool = False,
-                       output_path: str = "evaluation_matrix.md"):
+                       output_path: str = "evaluation_matrix.md",
+                       rrf_k: int = 60):
     if do_seed:
         print("Seeding deterministic test data...")
         from evaluation.test_data import seed_test_data
@@ -297,7 +332,7 @@ def run_ablation_study(k: int = 5, do_seed: bool = False,
             query_text, source_id, k, kg,
             id_to_category.get(source_id, "")
         )
-        delta_raw = run_deltarag(query_text, source_id, k)
+        delta_raw = run_deltarag(query_text, source_id, k, rrf_k=rrf_k)
 
         # Canonical top-K lists — all metrics consume these.
         rag_topk = prepare_top_k(rag_raw, k)
@@ -315,6 +350,9 @@ def run_ablation_study(k: int = 5, do_seed: bool = False,
                 "Recall": compute_recall(topk, expected_ids, k),
                 "Precision": compute_precision(topk, expected_ids, k),
                 "NDCG": compute_ndcg(topk, expected_ids, k),
+                "P@1": compute_p_at_1(topk, expected_ids),
+                "MRR": compute_mrr(topk, expected_ids),
+                "MAP": compute_map(topk, expected_ids),
                 "IDs": topk,
             }
         all_results.append(result)
@@ -343,7 +381,7 @@ def run_ablation_study(k: int = 5, do_seed: bool = False,
         if len(values) < 2:
             return 0.0
         m = mean(values)
-        return (sum((v - m) ** 2 for v in values) / len(values)) ** 0.5
+        return (sum((v - m) ** 2 for v in values) / (len(values) - 1)) ** 0.5
 
     # ── Confirmatory tests: overall, Holm-corrected ──────────────
     print("\n" + "=" * 90)
@@ -354,7 +392,7 @@ def run_ablation_study(k: int = 5, do_seed: bool = False,
     confirmatory_pvals = []
     confirmatory_labels = []
     confirmatory_effects = []  # (mean_delta, lo, hi)
-
+    
     for metric in ["Recall", "Precision", "NDCG"]:
         delta_vals = [r["DeltaRAG"][metric] for r in all_results]
         for baseline in ["RAG", "Graph"]:
@@ -372,7 +410,7 @@ def run_ablation_study(k: int = 5, do_seed: bool = False,
     ):
         md, lo, hi = eff
         marker = " ***" if rej else ""
-        print(f"  {label:40s} Δ={md:+.4f} [{lo:+.4f}, {hi:+.4f}] "
+        print(f"  {label:40s} Delta={md:+.4f} [{lo:+.4f}, {hi:+.4f}] "
               f"p={p:.4f}{marker}")
 
     # ── Markdown Output ──────────────────────────────────────────
@@ -455,7 +493,7 @@ def run_ablation_study(k: int = 5, do_seed: bool = False,
         "| :--- | :--- | :--- | :--- |",
     ]
     print(f"\n{'=' * 90}\n  OVERALL (all {len(all_results)} queries)")
-    for metric in ["Recall", "Precision", "NDCG"]:
+    for metric in ["Recall", "Precision", "NDCG", "P@1", "MRR", "MAP"]:
         cells = {}
         for algo in ["RAG", "Graph", "DeltaRAG"]:
             v = [r[algo][metric] for r in all_results]
@@ -467,8 +505,9 @@ def run_ablation_study(k: int = 5, do_seed: bool = False,
             m, s = cells[algo]
             text = f"{m:.3f} ± {s:.3f}"
             return f"**{text}**" if algo == best_algo else text
+        label = metric if metric in ("P@1", "MRR", "MAP") else f"{metric}@{k}"
         md_lines.append(
-            f"| {metric}@{k} | {fmt_o('RAG')} | {fmt_o('Graph')} | "
+            f"| {label} | {fmt_o('RAG')} | {fmt_o('Graph')} | "
             f"{fmt_o('DeltaRAG')} |"
         )
 
@@ -530,8 +569,13 @@ def main():
         "--k", type=int, default=5,
         help="Top-k for retrieval (default: 5).",
     )
+    parser.add_argument(
+        "--rrf-k", type=int, default=60,
+        help="RRF fusion constant for DeltaRAG (default: 60).",
+    )
     args = parser.parse_args()
-    run_ablation_study(k=args.k, do_seed=args.seed, output_path=args.output)
+    run_ablation_study(k=args.k, do_seed=args.seed, output_path=args.output,
+                       rrf_k=args.rrf_k)
 
 
 if __name__ == "__main__":

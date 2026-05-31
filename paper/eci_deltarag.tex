@@ -90,13 +90,25 @@ evidence rather than isolated snippets, the two components fused via
 Reciprocal Rank Fusion. We instantiate ECI on the Android digital risk
 ecosystem, monitoring security bulletins, Play Integrity API updates,
 CISA Known Exploited Vulnerabilities, and developer policy changes.
-A 100-query (85 scored) deterministic ablation study across
-768-dimensional Nomic v1.5 embeddings stored in Supabase/pgvector
-shows that DeltaRAG outperforms Standard RAG on top-rank quality
-(P@1\,=\,0.882 vs.\ 0.847; MRR\,=\,0.930 vs.\ 0.913), is statistically
-tied on nDCG@5 ($p = 0.43$), and strictly dominates a KG-only baseline
-on every metric ($\Delta$R@5\,=\,$+0.328$, $p < 0.001$, Holm-corrected),
-while rejecting 100\% of out-of-scope queries. The system achieves
+Rather than positioning DeltaRAG as a universal retrieval winner, we
+characterize \emph{where} knowledge-graph augmentation helps, where it
+does not, and why. A 100-query (85 scored) deterministic ablation study
+across 768-dimensional Nomic v1.5 embeddings stored in Supabase/pgvector
+shows that the KG-augmented fusion yields a modest but consistent
+top-rank improvement over a strong vector-only baseline
+(P@1\,=\,0.882 vs.\ 0.847; MRR\,=\,0.930 vs.\ 0.913), remains
+statistically tied on nDCG@5 ($p = 0.43$), and trades a small amount of
+raw coverage (R@5) for that top-of-list precision, the operative metric
+when an analyst acts on the first surfaced result. The augmentation is
+most valuable on \textit{policy-compliance}, \textit{temporal-change},
+and \textit{noisy/adversarial} queries, where structural linkage
+outweighs dense similarity, and least valuable on free-text
+\textit{component} and \textit{natural-language} queries, where a
+regex-based extractor recovers few entities. The large margin over a
+standalone KG-only configuration ($\Delta$R@5\,=\,$+0.328$,
+$p < 0.001$, Holm-corrected) is therefore read as a diagnostic of that
+extraction bottleneck rather than a competitive result. All variants
+reject 100\% of out-of-scope queries. The system achieves
 reliable structured-output generation from lightweight LLMs (Llama 3.1
 8B) within a multi-agent architecture (Sentinel triage + Coordinator
 synthesis) that surfaces prioritized, traceable recommendations to
@@ -185,10 +197,14 @@ search, and employs lightweight LLMs (Llama 3.1 8B) via Groq for
 rapid prototyping with a planned migration to self-hosted GCP
 infrastructure.
 
-The primary contribution of this paper is \textbf{DeltaRAG}, the
-fused delta-grounded retrieval methodology described above, which
-enables high-precision triage of evolving platform signals. Beyond
-DeltaRAG, we contribute: (1) the \textbf{ECI framework}, formalizing
+The primary contribution of this paper is the \textbf{ECI framework}: a
+knowledge-augmented monitoring and decision-support pipeline that
+converts ecosystem change into auditable, evidence-backed action. Within
+this framework, \textbf{DeltaRAG} is the retrieval component, the fused
+delta-grounded methodology described above, which we characterize not as
+a universal retrieval winner but in terms of the query regimes where
+KG augmentation helps and where it does not. Concretely, we contribute:
+(1) the \textbf{ECI framework}, formalizing
 ecosystem monitoring as a change-centric decision pipeline with formal
 definitions for delta detection, retrieval, and risk scoring; (2) a \textbf{knowledge graph augmentation} design
 for cross-source evidence linking via 2-hop traversal with entity-type
@@ -196,14 +212,14 @@ weighting and a cross-category bonus; (3) a
 \textbf{multi-agent architecture} (Sentinel triage + Coordinator
 synthesis) that converts change events into auditable Action Tickets
 with formal composite risk scoring (Equation~11); and (4) an
-\textbf{ablation study} across 100 deterministic benchmark queries
-(85 scored, 10 query-type categories, Holm-corrected significance)
-showing that DeltaRAG outperforms Standard RAG on top-rank quality
-(P@1\,=\,0.882 vs.\ 0.847; MRR\,=\,0.930 vs.\ 0.913), is statistically
-tied on nDCG@5 ($p = 0.43$), and strictly dominates a KG-only baseline
-on every metric ($\Delta$R@5\,=\,$+0.328$, $p < 0.001$), while
-empirically identifying pure-regex entity extraction as the primary
-bottleneck in the standalone KG variant.
+\textbf{ablation study with failure analysis} across 100 deterministic
+benchmark queries (85 scored, 10 query-type categories, Holm-corrected
+significance) showing that KG augmentation delivers a modest top-rank
+gain over a strong vector-only baseline (P@1\,=\,0.882 vs.\ 0.847;
+MRR\,=\,0.930 vs.\ 0.913) at parity on nDCG@5 ($p = 0.43$), with the
+benefit concentrated on policy-compliance, temporal, and adversarial
+queries, and empirically identifying pure-regex entity extraction as the
+primary bottleneck that limits the standalone KG variant.
 
 \section{Related Work}\label{related-work}
 
@@ -733,8 +749,8 @@ V3 DeltaRAG (Full)   & \textbf{0.882} & 0.478          & 0.899          & \textb
 
 \textbf{Headline numbers (Holm-corrected, $\alpha = 0.05$):}
 \begin{itemize}
-  \item \textbf{V3 vs.\ V2 (KG-Only)}: V3 strictly dominates on every metric, $\Delta$R@5 = +0.328 [+0.235, +0.423], $\Delta$nDCG@5 = +0.286 [+0.204, +0.373], both $p < 0.001$.
-  \item \textbf{V3 vs.\ V1 (Standard RAG)}: V3 wins on top-rank quality (\textbf{P@1} = 0.882 vs.\ 0.847; \textbf{MRR} = 0.930 vs.\ 0.913) and ties on nDCG@5 ($p = 0.43$). V1 retains a small edge on raw coverage, R@5 ($\Delta = -0.032$, $p = 0.014$) and P@5 ($\Delta = -0.026$, $p = 0.008$).
+  \item \textbf{V3 vs.\ V2 (KG-Only)}: V3 exceeds V2 on every metric, $\Delta$R@5 = +0.328 [+0.235, +0.423], $\Delta$nDCG@5 = +0.286 [+0.204, +0.373], both $p < 0.001$. We stress that this large gap is \emph{diagnostic rather than competitive}: V2 fails by construction on any query from which the regex extractor recovers no entities (it returns nothing and scores zero), so the margin chiefly measures the coverage ceiling of the current extractor, not an inherent limit of structural retrieval. The failure analysis in Section~\ref{failure-analysis} quantifies this.
+  \item \textbf{V3 vs.\ V1 (Standard RAG)}: V3 shows a modest top-rank improvement (\textbf{P@1} = 0.882 vs.\ 0.847; \textbf{MRR} = 0.930 vs.\ 0.913) and is statistically tied on nDCG@5 ($p = 0.43$). V1 retains a small edge on raw coverage, R@5 ($\Delta = -0.032$, $p = 0.014$) and P@5 ($\Delta = -0.026$, $p = 0.008$). The picture is therefore not ``DeltaRAG wins'' but a deliberate trade: a few points of depth-5 recall exchanged for higher top-of-list precision.
 \end{itemize}
 
 The per-type breakdown reveals where the KG component pays off: V3
@@ -757,6 +773,163 @@ list. The standalone KG-Only variant (V2) remains constrained by a
 regex-based entity extraction bottleneck on free-text vulnerability
 descriptions; addressing this via LLM-driven entity extraction is a
 critical focus for future iterations.
+
+\subsection{Failure Analysis}
+\label{failure-analysis}
+
+A central goal of this evaluation is to characterize \emph{where} the
+KG-augmented design fails, not only where it succeeds. We identify three
+distinct failure modes from the per-query results.
+
+\noindent\textbf{(F1) Extraction-induced KG blackouts.} The standalone
+KG-only variant (V2) exhibits a binary failure mode: on any query from
+which the regex extractor (\texttt{rag/entity\_extractor.py}) recovers no
+entity, the 2-hop traversal has no seed node and returns the empty set,
+scoring zero on every metric. This is the dominant driver of V2's weak
+aggregate. It is most severe on \textit{temporal\_change} queries, where
+V2 recall collapses to 0.150 (eight of ten queries return nothing,
+e.g.\ G01--G04, G07--G10) because phrasings such as ``what new kernel
+vulnerabilities were added between snapshots'' carry no CVE token,
+component from the whitelist, or policy clause. The same blackout recurs
+on free-text \textit{component\_focused} (C02, C07, C09, C10) and
+\textit{natural\_language} (D04, D07, D10) queries: strings like ``Knox
+attestation bypass'' or ``race condition in file access'' match no
+pattern, because ``Knox'' is absent from the component whitelist and the
+descriptions contain no rigid identifier. Crucially, this is a coverage
+limit of the extractor, not of structural retrieval per se, which is why
+the V3$>$V2 margin in Section~\ref{ablation-study} is read as diagnostic.
+
+\noindent\textbf{(F2) Fusion-induced recall regressions.} The cost of
+RRF fusion is visible on ten of the 85 scored queries, where V3 recall
+falls below the vector-only V1 (e.g.\ A09: 0.80$\to$0.60; B01, C03, C04,
+E01, E07, E09, J01: 1.00$\to$0.75; D03, F03: 1.00$\to$0.67). The
+mechanism is eviction at the $k=5$ boundary: when the KG surfaces a
+structurally connected but non-ground-truth chunk and the
+$1.5\times$ cross-category bonus lifts its fused score, it can displace a
+true-positive source out of the top five. This is the direct trade-off
+behind the small aggregate R@5 deficit versus V1 and is, by design, the
+price paid for the top-rank (P@1, MRR) gains; RRF's $k_{\mathrm{rrf}}=60$
+damping bounds the displacement but does not eliminate it.
+
+\noindent\textbf{(F3) Structural precision ceiling.} Absolute P@5 is
+modest across all variants (V1 0.504, V3 0.478) because the candidate
+pool after same-source exclusion is nine sources and most queries have
+only two to five ground-truth matches; with $k=5$, the attainable
+precision is capped well below 1.0 (a query with two relevant sources
+maxes out at P@5 = 0.40). P@5 here therefore measures the
+relevant-to-retrieved ratio under a fixed window, not retrieval error,
+and should be read alongside P@1 and MRR rather than in isolation.
+
+\subsection{Representative Case Studies}
+\label{case-studies}
+
+We ground the three failure modes and the system's successes in four
+representative queries spanning the win/parity/failure spectrum.
+
+\noindent\textbf{Case 1 --- KG augmentation helps (recovery).} On H01, a
+\textit{policy\_compliance} query anchored to the Android Security
+Bulletin (``by what date must agencies remediate the listed RCE''),
+vector-only V1 reaches only R@5 = 0.50: the deadline phrasing is
+semantically distant from the OEM patch text. The 2-hop traversal links
+the shared CVE node to the CISA KEV and OEM bulletin change events, and
+RRF lifts those structurally connected sources into the top five, raising
+V3 to R@5 = 0.75. This is the regime the KG is designed for: a
+compliance question whose answer lives in a vocabulary-mismatched source
+reachable only by a shared identifier. A10 (Pixel) shows the same
+pattern (V1 0.75 $\to$ V3 1.00).
+
+\noindent\textbf{Case 2 --- parity (RAG already saturates).} On B03/B04,
+\textit{identifier\_focused} queries built from raw CVE strings, V1
+already achieves R@5 = 1.00 and nDCG@5 = 0.96--0.98: the CVE token is a
+rare, high-salience string that the Nomic embedding aligns across sources
+without any structural help. V3 matches this (1.00) but cannot improve on
+it. The KG is redundant here, not harmful, the intended behaviour, and
+illustrates why an honest claim is ``parity where the embedding already
+solves it,'' not ``uniform improvement.''
+
+\noindent\textbf{Case 3 --- graceful degradation under KG blackout.} On
+C09 (Samsung, \textit{component\_focused}: ``Knox attestation bypass
+allowed modified devices to pass integrity checks''), the extractor finds
+no entity, so the KG contributes nothing (V2 R@5 = 0.00). RRF falls back
+cleanly to the vector ranking and V3 retains V1's full R@5 = 1.00. This
+is the safety property that makes the fusion deployable: when the graph
+is blind, it cannot drag the system below the vector baseline, the
+common case across the free-text C and D types.
+
+\noindent\textbf{Case 4 --- fusion misfire (honest negative).} On A09
+(Samsung, \textit{full\_diff}), V3 R@5 drops to 0.60 from V1's 0.80. Here
+the diff is entity-rich, the KG is active, and its cross-category-bonused
+chunks displace a true-positive OEM source past rank five. This is the
+F2 mechanism in isolation and the clearest case where KG augmentation
+\emph{hurts}: when both signals are confident but disagree, fusion can
+underperform either component alone. We report it rather than average it
+away, because the conditions under which it occurs (entity-dense diffs
+with strong cross-category competitors) are exactly those a deployment
+would encounter.
+
+\subsection{Robustness and Sensitivity Analysis}
+\label{sensitivity-analysis}
+
+To test whether the reported result depends on hand-picked
+hyperparameters, we sweep the two retrieval knobs that govern DeltaRAG:
+the retrieval depth $k \in \{3, 5, 10\}$ and the RRF fusion constant
+$\mathrm{rrf}_k \in \{10, 30, 60, 100\}$ (Eq.~10), a full $3 \times 4$
+grid re-run over all 85 scored queries with the same bootstrap and
+significance protocol. Two findings emerge.
+
+\noindent\textbf{Invariance to the fusion constant.} Across the entire
+$\mathrm{rrf}_k$ range, every DeltaRAG metric is \emph{unchanged} at each
+depth (Recall, nDCG, and P@1 vary by $0.000$ at $k = 5$, and likewise at
+$k = 3$ and $k = 10$). The reported numbers are therefore not an artifact
+of a tuned fusion constant. We are deliberate about the interpretation:
+this flatness arises because, on this benchmark, the fusion rarely
+reorders the top-$k$ set, the vector ranking already leads and the
+structural signal seldom overturns it, which is consistent with the
+RAG-led behaviour and the extractor-coverage limitation documented in
+Sections~\ref{failure-analysis} and~\ref{deltarag-vs.-standard-rag}. The
+robustness claim we make is the narrow, defensible one: on the synthetic
+ECI benchmark, DeltaRAG is insensitive to $\mathrm{rrf}_k$ within
+$[10, 100]$; we do not claim universal irrelevance of the constant.
+
+\noindent\textbf{The RAG trade-off is depth-dependent.} Varying $k$
+exposes that the Standard-RAG recall advantage reported at $k = 5$ is
+specific to that depth (Table~3). At $k = 3$ the recall gap is not
+significant ($\Delta = -0.028$, $p = 0.106$); at $k = 5$ it is
+significant but small ($\Delta = -0.032$, $p = 0.014$); and by $k = 10$
+it vanishes ($\Delta = -0.006$, $p = 0.32$) while DeltaRAG instead
+\emph{significantly} improves ranking quality over Standard RAG
+($\Delta$nDCG = $+0.016$, $p = 0.004$). Top-rank precision (P@1 = 0.882)
+is constant across all depths. The honest reading is that the
+recall-for-top-rank trade we describe in Section~\ref{deltarag-vs.-standard-rag}
+is a property of shallow retrieval; as the candidate pool widens, the
+fusion's ranking benefit dominates and the coverage deficit disappears,
+at the expected cost of precision as more slots admit false positives.
+
+{\def\LTcaptype{none}
+\begin{longtable}[]{@{}
+  >{\centering\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.08}}
+  >{\centering\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.12}}
+  >{\centering\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.12}}
+  >{\centering\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.13}}
+  >{\centering\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.10}}
+  >{\centering\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.22}}
+  >{\centering\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.22}}@{}}
+\toprule\noalign{}
+\textbf{$k$} & \textbf{R@$k$} & \textbf{P@$k$} & \textbf{nDCG@$k$} & \textbf{P@1} & \textbf{$\Delta$R vs.\ RAG ($p$)} & \textbf{$\Delta$nDCG vs.\ RAG ($p$)} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+3  & 0.724 & 0.627 & 0.823 & 0.882 & $-0.028$ ($0.106$) & $+0.000$ ($0.66$) \\
+5  & 0.899 & 0.478 & 0.873 & 0.882 & $-0.032$ ($0.014$) & $-0.004$ ($0.43$) \\
+10 & 0.994 & 0.268 & 0.923 & 0.882 & $-0.006$ ($0.32$) & $+0.016$ ($0.004$) \\
+\end{longtable}
+}
+
+\emph{Table 3: DeltaRAG sensitivity to retrieval depth $k$. Metrics are
+identical across $\mathrm{rrf}_k \in \{10, 30, 60, 100\}$, so a single
+row per $k$ suffices. $\Delta$ columns are paired mean differences
+(DeltaRAG $-$ Standard RAG) with raw Wilcoxon $p$ (uncorrected).}
 
 \section{Discussion}
 \label{discussionn}
@@ -828,20 +1001,28 @@ The ECI framework is designed to reduce three operational costs: (1) time-to-awa
 \section{Conclusion and Future
 Work}\label{conclusion-and-future-work}
 
-We have presented Ecosystem Change Intelligence (ECI), a framework for
-converting ecosystem monitoring from a passive documentation-tracking
-activity into an active, change-centric decision pipeline. Our primary
-contribution, \textbf{DeltaRAG} (Full System), grounds
-retrieval on change-local context windows (Eq.~5) and fuses them with
-2-hop knowledge graph traversal via RRF, achieving
-\textbf{P@1\,=\,0.882}, \textbf{MRR\,=\,0.930}, \textbf{nDCG@5\,=\,0.873},
-and \textbf{100\% false-alarm rejection} across 100 benchmark queries
-(85 scored). On the metrics most relevant to a triage workflow,
-top-rank quality, the Full System outperforms Standard RAG (P@1
-$+0.035$, MRR $+0.017$) while remaining statistically tied on nDCG@5
-($p = 0.43$); it strictly dominates the KG-Only baseline on every
-metric ($\Delta$R@5 $= +0.328$, $p < 0.001$). The per-type breakdown
-identifies the regimes where KG augmentation pays off most clearly, \textit{policy\_compliance}, \textit{temporal\_change}, and \textit{noisy\_adversarial} queries. Complementary contributions include a formal mathematical framework (Eqs.~1--11), a KG layer for cross-source evidence linking, a two-agent architecture (Sentinel + Coordinator) producing auditable Action Tickets with composite risk scoring, and an ablation study across three retrieval variants validating the design choices. The system monitors 10 live
+We have presented Ecosystem Change Intelligence (ECI), a
+knowledge-augmented monitoring and decision-support framework that
+converts ecosystem monitoring from a passive documentation-tracking
+activity into an active, change-centric decision pipeline. Its retrieval
+component, \textbf{DeltaRAG}, grounds retrieval on change-local context
+windows (Eq.~5) and fuses them with 2-hop knowledge graph traversal via
+RRF, achieving \textbf{P@1\,=\,0.882}, \textbf{MRR\,=\,0.930},
+\textbf{nDCG@5\,=\,0.873}, and \textbf{100\% false-alarm rejection}
+across 100 benchmark queries (85 scored). Rather than claiming
+across-the-board superiority, our evaluation characterizes \emph{where}
+KG augmentation helps and where it does not: on the top-rank metrics
+most relevant to a triage workflow it improves modestly over a strong
+vector-only baseline (P@1 $+0.035$, MRR $+0.017$) while remaining
+statistically tied on nDCG@5 ($p = 0.43$), trading a few points of
+depth-5 recall for that top-of-list precision. The per-type breakdown
+and failure analysis (Sections~\ref{ablation-study}
+and~\ref{failure-analysis}) localize the benefit to
+\textit{policy\_compliance}, \textit{temporal\_change}, and
+\textit{noisy\_adversarial} queries, and trace the standalone KG-only
+configuration's large deficit ($\Delta$R@5 $= +0.328$, $p < 0.001$) to
+a regex entity-extraction bottleneck rather than a limit of structural
+retrieval. Complementary contributions include a formal mathematical framework (Eqs.~1--11), a KG layer for cross-source evidence linking, a two-agent architecture (Sentinel + Coordinator) producing auditable Action Tickets with composite risk scoring, and an ablation study across three retrieval variants validating the design choices. The system monitors 10 live
 Android ecosystem sources and surfaces detected changes to fraud operations teams as evidence-backed, priority-ranked recommendations.
 
 Future work will pursue four directions. First, \textbf{benchmark

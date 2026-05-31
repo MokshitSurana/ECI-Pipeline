@@ -7,3 +7,4 @@ dashboard/node_modules
 dashboard/.next
 dashboard/out
 dashboard/AGENTS.md
+.claude/

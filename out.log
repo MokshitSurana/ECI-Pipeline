@@ -1,0 +1,236 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+<All keys matched successfully>
+Traceback (most recent call last):
+  File "C:\Users\moksh\Desktop\eci-pipeline\evaluation\ablation_study.py", line 376, in run_ablation_study
+    print(f"  {label:40s} \u0394={md:+.4f} [{lo:+.4f}, {hi:+.4f}] "
+  File "C:\Users\moksh\AppData\Roaming\uv\python\cpython-3.11.13-windows-x86_64-none\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u0394' in position 43: character maps to <undefined>
+Verifying DB state (use --seed to reseed)...
+DB state OK.
+Loading knowledge graph...
+
+Running 100 queries (k=5)...
+
+  A01 (A) | RAG R=1.00 | Graph R=0.80 | Delta R=0.80
+  A02 (A) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  A03 (A) | RAG R=1.00 | Graph R=0.80 | Delta R=0.80
+  A04 (A) | RAG R=1.00 | Graph R=0.80 | Delta R=0.80
+  A05 (A) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  A06 (A) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  A07 (A) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  A08 (A) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  A09 (A) | RAG R=0.80 | Graph R=0.80 | Delta R=0.60
+  A10 (A) | RAG R=0.75 | Graph R=1.00 | Delta R=1.00
+  B01 (B) | RAG R=1.00 | Graph R=1.00 | Delta R=0.75
+  B02 (B) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  B03 (B) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  B04 (B) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  B05 (B) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  B06 (B) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  B07 (B) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  B08 (B) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  B09 (B) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  B10 (B) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  C01 (C) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  C02 (C) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  C03 (C) | RAG R=1.00 | Graph R=0.75 | Delta R=0.75
+  C04 (C) | RAG R=1.00 | Graph R=0.75 | Delta R=0.75
+  C05 (C) | RAG R=1.00 | Graph R=0.67 | Delta R=1.00
+  C06 (C) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  C07 (C) | RAG R=0.75 | Graph R=0.00 | Delta R=0.75
+  C08 (C) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  C09 (C) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  C10 (C) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  D01 (D) | RAG R=1.00 | Graph R=0.50 | Delta R=1.00
+  D02 (D) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  D03 (D) | RAG R=1.00 | Graph R=0.67 | Delta R=0.67
+  D04 (D) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  D05 (D) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  D06 (D) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  D07 (D) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  D08 (D) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  D09 (D) | RAG R=1.00 | Graph R=0.50 | Delta R=1.00
+  D10 (D) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  E01 (E) | RAG R=1.00 | Graph R=1.00 | Delta R=0.75
+  E02 (E) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  E03 (E) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  E04 (E) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  E05 (E) | RAG R=1.00 | Graph R=0.67 | Delta R=1.00
+  E06 (E) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  E07 (E) | RAG R=1.00 | Graph R=1.00 | Delta R=0.75
+  E08 (E) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  E09 (E) | RAG R=1.00 | Graph R=1.00 | Delta R=0.75
+  E10 (E) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  F01 (F) | RAG R=1.00 | Graph R=0.50 | Delta R=1.00
+  F02 (F) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  F03 (F) | RAG R=1.00 | Graph R=0.67 | Delta R=0.67
+  F04 (F) | RAG R=0.67 | Graph R=0.00 | Delta R=0.67
+  F05 (F) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  F06 (F) | RAG R=1.00 | Graph R=0.50 | Delta R=1.00
+  F07 (F) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  F08 (F) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  SKIP F09: no valid expected source IDs
+  F10 (F) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  G01 (G) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  G02 (G) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  G03 (G) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  G04 (G) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  G05 (G) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  G06 (G) | RAG R=0.50 | Graph R=0.50 | Delta R=0.50
+  G07 (G) | RAG R=0.50 | Graph R=0.00 | Delta R=0.50
+  G08 (G) | RAG R=0.50 | Graph R=0.00 | Delta R=0.50
+  G09 (G) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  G10 (G) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  H01 (H) | RAG R=0.50 | Graph R=1.00 | Delta R=0.75
+  H02 (H) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  H03 (H) | RAG R=1.00 | Graph R=0.75 | Delta R=1.00
+  H04 (H) | RAG R=0.50 | Graph R=0.00 | Delta R=0.50
+  SKIP H05: no valid expected source IDs
+  SKIP H06: no valid expected source IDs
+  H07 (H) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  SKIP H08: no valid expected source IDs
+  H09 (H) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  SKIP H10: no valid expected source IDs
+  SKIP I01: no valid expected source IDs
+  SKIP I02: no valid expected source IDs
+  SKIP I03: no valid expected source IDs
+  SKIP I04: no valid expected source IDs
+  SKIP I05: no valid expected source IDs
+  SKIP I06: no valid expected source IDs
+  SKIP I07: no valid expected source IDs
+  SKIP I08: no valid expected source IDs
+  SKIP I09: no valid expected source IDs
+  SKIP I10: no valid expected source IDs
+  J01 (J) | RAG R=1.00 | Graph R=1.00 | Delta R=0.75
+  J02 (J) | RAG R=1.00 | Graph R=0.00 | Delta R=1.00
+  J03 (J) | RAG R=1.00 | Graph R=0.75 | Delta R=1.00
+  J04 (J) | RAG R=1.00 | Graph R=1.00 | Delta R=1.00
+  J05 (J) | RAG R=0.67 | Graph R=0.67 | Delta R=0.67
+  J06 (J) | RAG R=1.00 | Graph R=0.50 | Delta R=1.00
+  J07 (J) | RAG R=0.50 | Graph R=0.00 | Delta R=0.50
+  J08 (J) | RAG R=0.50 | Graph R=0.00 | Delta R=0.50
+  J09 (J) | RAG R=0.50 | Graph R=0.00 | Delta R=0.50
+  J10 (J) | RAG R=0.50 | Graph R=0.00 | Delta R=0.50
+
+(15 queries skipped)
+
+==========================================================================================
+  CONFIRMATORY TESTS (overall, n=85, Holm-Bonferroni corrected)
+==========================================================================================
+CRASHED: 'charmap' codec can't encode character '\u0394' in position 43: character maps to <undefined>
+
+  Type A: Full Diff (n=10)
+    RAG        Recall: 0.955 +/- 0.091
+    Graph      Recall: 0.820 +/- 0.289
+    DeltaRAG   Recall: 0.900 +/- 0.134
+    RAG        Precision: 0.680 +/- 0.271
+    Graph      Precision: 0.560 +/- 0.280
+    DeltaRAG   Precision: 0.620 +/- 0.209
+    RAG        NDCG: 0.943 +/- 0.075
+    Graph      NDCG: 0.848 +/- 0.289
+    DeltaRAG   NDCG: 0.923 +/- 0.089
+
+  Type B: Identifier-Focused (n=10)
+    RAG        Recall: 1.000 +/- 0.000
+    Graph      Recall: 0.800 +/- 0.400
+    DeltaRAG   Recall: 0.975 +/- 0.075
+    RAG        Precision: 0.600 +/- 0.219
+    Graph      Precision: 0.540 +/- 0.310
+    DeltaRAG   Precision: 0.580 +/- 0.209
+    RAG        NDCG: 0.942 +/- 0.110
+    Graph      NDCG: 0.800 +/- 0.400
+    DeltaRAG   NDCG: 0.946 +/- 0.118
+
+  Type C: Component-Focused (n=10)
+    RAG        Recall: 0.975 +/- 0.075
+    Graph      Recall: 0.517 +/- 0.436
+    DeltaRAG   Recall: 0.925 +/- 0.115
+    RAG        Precision: 0.540 +/- 0.201
+    Graph      Precision: 0.320 +/- 0.286
+    DeltaRAG   Precision: 0.500 +/- 0.161
+    RAG        NDCG: 0.972 +/- 0.073
+    Graph      NDCG: 0.543 +/- 0.450
+    DeltaRAG   NDCG: 0.942 +/- 0.091
+
+  Type D: Natural Language (n=10)
+    RAG        Recall: 1.000 +/- 0.000
+    Graph      Recall: 0.567 +/- 0.416
+    DeltaRAG   Recall: 0.967 +/- 0.100
+    RAG        Precision: 0.440 +/- 0.174
+    Graph      Precision: 0.200 +/- 0.155
+    DeltaRAG   Precision: 0.420 +/- 0.166
+    RAG        NDCG: 0.925 +/- 0.130
+    Graph      NDCG: 0.562 +/- 0.425
+    DeltaRAG   NDCG: 0.897 +/- 0.136
+
+  Type E: Entity-Only (n=10)
+    RAG        Recall: 1.000 +/- 0.000
+    Graph      Recall: 0.967 +/- 0.100
+    DeltaRAG   Recall: 0.925 +/- 0.115
+    RAG        Precision: 0.640 +/- 0.215
+    Graph      Precision: 0.620 +/- 0.227
+    DeltaRAG   Precision: 0.580 +/- 0.189
+    RAG        NDCG: 0.960 +/- 0.038
+    Graph      NDCG: 0.972 +/- 0.070
+    DeltaRAG   NDCG: 0.942 +/- 0.091
+
+  Type F: Cross-Source Linkage (n=9)
+    RAG        Recall: 0.963 +/- 0.105
+    Graph      Recall: 0.407 +/- 0.401
+    DeltaRAG   Recall: 0.926 +/- 0.139
+    RAG        Precision: 0.422 +/- 0.175
+    Graph      Precision: 0.178 +/- 0.175
+    DeltaRAG   Precision: 0.400 +/- 0.163
+    RAG        NDCG: 0.915 +/- 0.113
+    Graph      NDCG: 0.439 +/- 0.414
+    DeltaRAG   NDCG: 0.912 +/- 0.119
+
+  Type G: Temporal-Change (n=10)
+    RAG        Recall: 0.850 +/- 0.229
+    Graph      Recall: 0.150 +/- 0.320
+    DeltaRAG   Recall: 0.850 +/- 0.229
+    RAG        Precision: 0.360 +/- 0.196
+    Graph      Precision: 0.060 +/- 0.128
+    DeltaRAG   Precision: 0.360 +/- 0.196
+    RAG        NDCG: 0.750 +/- 0.247
+    Graph      NDCG: 0.161 +/- 0.334
+    DeltaRAG   NDCG: 0.772 +/- 0.222
+
+  Type H: Policy/Compliance (n=6)
+    RAG        Recall: 0.833 +/- 0.236
+    Graph      Recall: 0.458 +/- 0.466
+    DeltaRAG   Recall: 0.875 +/- 0.191
+    RAG        Precision: 0.367 +/- 0.213
+    Graph      Precision: 0.267 +/- 0.320
+    DeltaRAG   Precision: 0.400 +/- 0.231
+    RAG        NDCG: 0.653 +/- 0.265
+    Graph      NDCG: 0.472 +/- 0.475
+    DeltaRAG   NDCG: 0.685 +/- 0.273
+
+  Type J: Noisy/Adversarial (n=10)
+    RAG        Recall: 0.767 +/- 0.238
+    Graph      Recall: 0.392 +/- 0.415
+    DeltaRAG   Recall: 0.742 +/- 0.225
+    RAG        Precision: 0.420 +/- 0.260
+    Graph      Precision: 0.280 +/- 0.325
+    DeltaRAG   Precision: 0.400 +/- 0.237
+    RAG        NDCG: 0.749 +/- 0.212
+    Graph      NDCG: 0.421 +/- 0.434
+    DeltaRAG   NDCG: 0.766 +/- 0.218
+
+==========================================================================================
+  OVERALL (all 85 queries)
+    RAG        Recall: 0.931 +/- 0.162
+    Graph      Recall: 0.571 +/- 0.445
+    DeltaRAG   Recall: 0.899 +/- 0.169
+    RAG        Precision: 0.504 +/- 0.245
+    Graph      Precision: 0.341 +/- 0.314
+    DeltaRAG   Precision: 0.478 +/- 0.217
+    RAG        NDCG: 0.877 +/- 0.185
+    Graph      NDCG: 0.587 +/- 0.450
+    DeltaRAG   NDCG: 0.873 +/- 0.179
+
+==========================================================================================
+Results written to evaluation_matrix.md
