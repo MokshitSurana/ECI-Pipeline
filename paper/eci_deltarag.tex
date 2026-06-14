@@ -800,9 +800,10 @@ limit of the extractor, not of structural retrieval per se, which is why
 the V3$>$V2 margin in Section~\ref{ablation-study} is read as diagnostic.
 
 \noindent\textbf{(F2) Fusion-induced recall regressions.} The cost of
-RRF fusion is visible on ten of the 85 scored queries, where V3 recall
-falls below the vector-only V1 (e.g.\ A09: 0.80$\to$0.60; B01, C03, C04,
-E01, E07, E09, J01: 1.00$\to$0.75; D03, F03: 1.00$\to$0.67). The
+RRF fusion is visible on thirteen of the 85 scored queries, where V3
+recall falls below the vector-only V1 (e.g.\ A09: 0.80$\to$0.60; B01,
+E01, E07, E09, J01: 1.00$\to$0.75; A01, A03, A04: 1.00$\to$0.80; D03,
+F03: 1.00$\to$0.67). The
 mechanism is eviction at the $k=5$ boundary: when the KG surfaces a
 structurally connected but non-ground-truth chunk and the
 $1.5\times$ cross-category bonus lifts its fused score, it can displace a
@@ -819,6 +820,50 @@ precision is capped well below 1.0 (a query with two relevant sources
 maxes out at P@5 = 0.40). P@5 here therefore measures the
 relevant-to-retrieved ratio under a fixed window, not retrieval error,
 and should be read alongside P@1 and MRR rather than in isolation.
+
+To move beyond a prose account, we classify every one of the 85 scored
+queries into a single dominant failure category by a mechanical rule over
+the extractor and the three retrievers (a query is assigned to fusion
+demotion if V3 recall drops below V1; otherwise to a KG-blackout category
+if 2-hop traversal returns nothing relevant, split by whether any entity
+was extracted; otherwise to incomplete-linkage if the graph fires but
+recovers only part of the gold set). Table~3 reports the resulting
+distribution. The decomposition is itself diagnostic: of the 54 queries
+that exhibit any imperfection, only the 13 fusion demotions (C4) are a
+\emph{net} harm; the other 41 (C2, C3, C5) degrade gracefully because RRF
+falls back to, or is completed by, the vector ranking, so DeltaRAG recall
+matches or exceeds V1 on every one of them. The single largest bucket,
+C2, also sharpens the F1 narrative: the regex extractor almost never fails
+to capture a well-formed identifier (C1 = 0); rather, the extracted entity
+is a singleton (a CVE or SVE present in only one source) or a component
+name with no cross-source co-occurrence edge, so the graph has nothing to
+traverse to.
+
+{\def\LTcaptype{none}
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.20}}
+  >{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.05}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.23}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.26}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.26}}@{}}
+\toprule\noalign{}
+\textbf{Failure category} & \textbf{n} & \textbf{Representative} & \textbf{Effect on retrieval/output} & \textbf{Interpretation} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+C1: Entity not captured by regex & 0 & --- (none observed) & No occurrences. & Well-formed CVE/SVE/CVSS identifiers are reliably matched; pure extraction misses do not arise. The extractor's limitation surfaces instead as C2. \\
+C2: Implicit relation not captured & 19 & C09 ``Knox attestation bypass\ldots''; B07 (CVE-2025-0098, Camera HAL) & KG-only returns $\emptyset$ (Graph R@5 = 0.00); V3 falls back to vector and preserves recall (e.g.\ 1.00). & An entity \emph{is} extracted, but it has no co-occurrence edge: a singleton identifier in one source, or a component (Knox, Titan, Camera HAL) with no cross-source link. Graceful. \\
+C3: NL query, no extractable identifier & 11 & G01 ``new kernel vulns added between snapshots''; H04 ``by what date must agencies patch\ldots'' & KG inert (Graph R@5 = 0.00); retrieval reduces to vector-only; recall intact where embeddings suffice, $\approx$0.50 on under-specified phrasings. & Temporal/compliance/analyst phrasings carry no rigid identifier to seed traversal --- the clearest target for LLM-based extraction. \\
+C4: Fusion demotes a relevant item & 13 & A09 (0.80$\to$0.60); B01, E09 (1.00$\to$0.75) & A true-positive source is pushed past rank 5; mean recall regression; main driver of V3's depth-5 deficit vs.\ V1. & Both signals confident but disagreeing; the cross-category bonus lifts a connected non-gold chunk over a relevant vector hit. \emph{Net harm.} \\
+C5: Incomplete structural linkage & 11 & D01 (Graph R@5 = 0.50, V3 = 1.00); F01 & KG recovers only part of the gold set; fusion with the vector ranking usually completes it (V3 R@5 = 1.00). & 2-hop traversal reaches some but not all linked sources (partial co-occurrence, hub-entity stoplisting). Partial signal, no net harm. \\
+\end{longtable}
+}
+
+\emph{Table 3: Structured error analysis over the 85 scored queries
+(31 exhibit no failure). Categories are mutually exclusive and assigned by
+mechanical rule at $k=5$; C4 is the only net-harmful mode, and refines
+F1--F2 with per-category counts, mechanisms, and effects.}
 
 \subsection{Representative Case Studies}
 \label{case-studies}
@@ -893,7 +938,7 @@ $[10, 100]$; we do not claim universal irrelevance of the constant.
 
 \noindent\textbf{The RAG trade-off is depth-dependent.} Varying $k$
 exposes that the Standard-RAG recall advantage reported at $k = 5$ is
-specific to that depth (Table~3). At $k = 3$ the recall gap is not
+specific to that depth (Table~4). At $k = 3$ the recall gap is not
 significant ($\Delta = -0.028$, $p = 0.106$); at $k = 5$ it is
 significant but small ($\Delta = -0.032$, $p = 0.014$); and by $k = 10$
 it vanishes ($\Delta = -0.006$, $p = 0.32$) while DeltaRAG instead
@@ -926,10 +971,62 @@ at the expected cost of precision as more slots admit false positives.
 \end{longtable}
 }
 
-\emph{Table 3: DeltaRAG sensitivity to retrieval depth $k$. Metrics are
+\emph{Table 4: DeltaRAG sensitivity to retrieval depth $k$. Metrics are
 identical across $\mathrm{rrf}_k \in \{10, 30, 60, 100\}$, so a single
 row per $k$ suffices. $\Delta$ columns are paired mean differences
 (DeltaRAG $-$ Standard RAG) with raw Wilcoxon $p$ (uncorrected).}
+
+\subsection{Latency and Operational Overhead}
+\label{latency-overhead}
+
+To assess whether the KG augmentation is operationally affordable, we
+profile end-to-end Action-Ticket generation across the ten escalated
+changes, decomposing it into its main components (Table~5). The
+deterministic retrieval stages are averaged over three runs each; the
+two LLM stages (Sentinel triage and Coordinator synthesis, Groq-hosted
+Llama~3.1~8B) are timed once per change.
+
+{\def\LTcaptype{none}
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.46}}
+  >{\centering\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.27}}
+  >{\centering\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.27}}@{}}
+\toprule\noalign{}
+\textbf{Component} & \textbf{Time (ms)} & \textbf{\% of total} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Vector retrieval & 669 $\pm$ 132 & 2.4\% \\
+KG extraction + 2-hop traversal & 890 $\pm$ 453 & 3.2\% \\
+Fusion / reranking (RRF) & $<$1 & $<$0.1\% \\
+LLM synthesis (Sentinel + Coordinator) & 26{,}490 & 94.4\% \\
+\textbf{Total (end-to-end)} & \textbf{28{,}048} & 100\% \\
+\end{longtable}
+}
+
+\emph{Table 5: Per-component latency of Action-Ticket generation
+(mean across 10 changes). LLM stages are hosted-API wall-clock and
+dominate; the KG/fusion machinery is sub-second.}
+
+Two points follow. First, the structural machinery that distinguishes
+DeltaRAG from a vanilla pipeline --- entity extraction, 2-hop traversal,
+and RRF --- costs about 0.89~s per ticket (the RRF fusion itself is
+sub-millisecond, pure in-memory rank arithmetic). Measured against a
+vector-only baseline that omits the KG path and the cross-source evidence
+block, the \emph{added overhead} of the full DeltaRAG pipeline is
+$\approx$0.97~s per ticket ($\approx$3.5\% of end-to-end time): 0.89~s of
+KG/fusion plus $\approx$0.08~s for the larger Coordinator prompt. Second,
+the dominant cost ($>$94\%) is LLM synthesis, which both the baseline and
+DeltaRAG incur identically. We report the LLM figure as hosted-inference
+wall-clock on a shared free-tier endpoint; its absolute value reflects
+network and provider queueing and will vary with deployment, whereas the
+architecturally relevant quantity --- the retrieval-and-fusion overhead
+DeltaRAG adds --- is sub-second and effectively negligible next to the
+generation step a monitoring system must pay regardless. The
+performance-vs-complexity trade is thus favourable: the KG augmentation's
+top-rank gains (Section~\ref{ablation-study}) come at a sub-second,
+single-digit-percent latency cost.
 
 \section{Discussion}
 \label{discussionn}
