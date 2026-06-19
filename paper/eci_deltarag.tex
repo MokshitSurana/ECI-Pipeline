@@ -5,6 +5,10 @@
 ]{article}
 \usepackage{xcolor}
 \usepackage{amsmath,amssymb}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 % \setcounter{secnumdepth}{-\maxdimen} % remove section numbering
 \usepackage{iftex}
 \ifPDFTeX
@@ -358,36 +362,34 @@ Ecosystem Change Intelligence (ECI) addresses this gap through three
 formal stages:
 
 \textbf{Stage 1: Delta Detection.} For each source $s_i$, the system
-periodically fetches a new snapshot $s_i(t_k)$, computes a structured diff
-against the previous snapshot $s_i(t_{k-1})$, and produces a change event
-$\Delta_i(t)$ containing the added text, deleted text, change type, and
-source metadata. This differs from naive textual diffing in that it
-applies HTML cleaning, boilerplate removal, and semantic deduplication
-before comparison.
+periodically fetches a new snapshot, computes a structured diff against
+the previous one, and produces a change event $\Delta_i(t)$ capturing the
+added text, deleted text, change type, and source metadata. Unlike naive
+textual diffing, it applies HTML cleaning, boilerplate removal, and
+cosmetic-change filtering before comparison.
 
-\textbf{Stage 2: Change-Grounded Retrieval.} Only the delta content
-(added and deleted spans) is chunked (1,600 characters, 200-character
-overlap), embedded using a task-aware model with \texttt{search\_document:}
-prefix optimization, and stored in a vector index. Restricting the
-embedding pipeline to delta content (rather than embedding full
-documents) is a deliberate design choice: it concentrates the index on
-operationally relevant signal and avoids the vector dilution that
-plagues full-document RAG over long, repetitive ecosystem corpora. In
-parallel, a knowledge graph (KG) layer indexes entities extracted from
-each change event (CVEs, APIs, permissions, policy clauses) and links
-them to their originating change. At query time, the system performs
-vector retrieval against the delta index and a 2-hop KG traversal, and
-fuses the two ranked lists via Reciprocal Rank Fusion. We refer to this
-fused retrieval methodology as \textbf{DeltaRAG}.
+\textbf{Stage 2: Change-Grounded Retrieval.} Only the delta content is
+chunked, embedded with a task-aware model, and stored in a vector index;
+restricting embedding to deltas rather than full documents concentrates
+the index on operationally relevant signal and avoids the vector dilution
+that plagues full-document RAG over long, repetitive corpora. In parallel,
+a knowledge graph (KG) layer indexes entities extracted from each change
+(CVEs, APIs, permissions, policy clauses) and links them to their
+originating change. At query time the system fuses vector retrieval over
+the delta index with a 2-hop KG traversal via Reciprocal Rank Fusion; we
+call this fused retrieval \textbf{DeltaRAG}.
 
 \textbf{Stage 3: Evidence-Backed Action Generation.} For changes deemed
-relevant by the Sentinel Agent (relevance score $\geq$ threshold), a
-Coordinator Agent consumes the DeltaRAG output, identifies cross-source
-connections (e.g., a CVE linked to an API deprecation linked to a policy
-change), and generates Action Tickets with structured fields: summary,
-risk score, recommended actions, priority, owner suggestion, and
-evidence citations. All outputs are constrained to a strict JSON schema
-to ensure downstream parseability.
+relevant by the Sentinel Agent, a Coordinator Agent consumes the DeltaRAG
+output, identifies cross-source connections (e.g., a CVE linked to an API
+deprecation linked to a policy change), and generates Action Tickets with
+structured fields (summary, risk score, recommended actions, priority,
+owner, evidence citations), constrained to a strict JSON schema for
+downstream parseability.
+
+Figure~\ref{fig:workflow} and Algorithm~\ref{alg:eci}
+(Section~\ref{system-architecture}) give the end-to-end workflow, and
+Section~\ref{formal-framework} formalizes each stage.
 
 \subsection{Assumptions}\label{assumptions}
 
@@ -403,9 +405,9 @@ appropriate prompting.
 
 \subsection{Formal Framework}\label{formal-framework}
 
-We now formalize the core ECI operations. Let
-$\mathcal{S} = \{s_1, s_2, \ldots, s_n\}$ be the set of monitored
-sources. Each source $s_i$ produces a time-ordered snapshot sequence:
+We now formalize the core ECI operations. Recall the monitored sources
+$\mathcal{S}$ from Section~\ref{the-operational-gap}; each $s_i$ produces a
+time-ordered snapshot sequence:
 \begin{equation}
   \mathcal{T}_i = \langle s_i(t_1),\, s_i(t_2),\, \ldots \rangle, \quad t_1 < t_2 < \cdots
 \end{equation}
@@ -473,6 +475,8 @@ where $\mathcal{R}$ is the set of input ranked lists.
 \end{equation}
 The contribution of DeltaRAG over Standard RAG is thus the addition of the KG component and the RRF fusion step; the vector half is shared.
 
+\noindent These three definitions are exactly the variants compared in our ablation (Section~\ref{ablation-study}): \textbf{V1 Standard RAG} is the vector retrieval $R_{\mathrm{vec}}$ (Eq.~5), \textbf{V2 KG-Only} is the graph context expansion $\mathrm{KGCtx}$ (Eq.~8), and \textbf{V3 DeltaRAG} is their RRF fusion (Eq.~10). The evaluation therefore isolates the contribution of each component of the framework rather than treating DeltaRAG as a monolithic system.
+
 \noindent\textbf{Composite Risk Score.} The Coordinator Agent evaluates the synthesized context to assign a scalar risk score to each Action Ticket. Rather than a rigid heuristic, the LLM-driven Coordinator approximates a composite function:
 \begin{equation}
   \rho(a) \approx \alpha \cdot r_{\mathrm{rel}}(a) + \beta \cdot r_{\mathrm{sev}}(a) + \gamma \cdot r_{\mathrm{scope}}(a)
@@ -481,43 +485,116 @@ where $r_{\mathrm{rel}} \in [0,10]$ is the upstream Sentinel relevance, $r_{\mat
 
 \section{System Architecture}\label{system-architecture}
 
-The ECI system is organized as an six-stage pipeline spanning three architectural layers: the Platform Evolution Layer (data acquisition and change detection), the Semantic Retrieval Layer (embedding, storage, and similarity search), and the Agent Intelligence Layer (triage, coordination, and recommendation generation). We describe each component below.
+The ECI system is organized as a six-stage pipeline spanning three architectural layers: the Platform Evolution Layer (data acquisition and change detection), the Semantic Retrieval Layer (embedding, storage, and similarity search), and the Agent Intelligence Layer (triage, coordination, and recommendation generation). Figure~\ref{fig:workflow} shows the end-to-end workflow and Algorithm~\ref{alg:eci} gives the corresponding procedure; we describe each component below.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  font=\footnotesize\sffamily,
+  >={Stealth[length=1.6mm]},
+  node distance=5mm and 9mm,
+  base/.style={draw, rounded corners=2pt, align=center, inner sep=3pt,
+               minimum height=7mm, text width=30mm},
+  plat/.style={base, fill=blue!8},
+  sem/.style={base, fill=teal!12},
+  agent/.style={base, fill=orange!14},
+  flow/.style={->, semithick, draw=black!65},
+  qry/.style={->, semithick, dashed, draw=black!55},
+]
+% main execution spine
+\node[plat]               (src)  {Monitored sources \scriptsize(registry)};
+\node[plat, below=of src] (snap) {Snapshot ingestion\\\scriptsize fetch $\cdot$ clean $\cdot$ hash};
+\node[plat, below=of snap](diff) {Change detection\\\scriptsize structured diff $\Delta$};
+\node[agent, below=of diff](sent){Sentinel triage\\\scriptsize relevance $\geq \tau$?};
+\node[sem, below=of sent]  (rrf) {DeltaRAG retrieval\\\scriptsize $R_{\mathrm{vec}} \oplus$ 2-hop KG $\to$ RRF};
+\node[agent, below=of rrf] (coord){Coordinator synthesis};
+\node[agent, below=of coord](tick){Action Ticket\\\scriptsize summary $\cdot$ risk $\cdot$ actions $\cdot$ evidence};
+% indexing side branch
+\node[sem, right=of diff]  (emb) {Delta embedding\\\scriptsize $\to$ vector index $\mathcal{D}$};
+\node[sem, below=of emb]   (kg)  {Entity extraction\\\scriptsize $\to$ knowledge graph $\mathcal{G}$};
+% flows
+\draw[flow] (src)  -- (snap);
+\draw[flow] (snap) -- (diff);
+\draw[flow] (diff) -- (sent);
+\draw[flow] (sent) -- node[right=1pt, font=\scriptsize]{if relevant} (rrf);
+\draw[flow] (rrf)  -- (coord);
+\draw[flow] (coord)-- (tick);
+\draw[flow] (diff) -- (emb);
+\draw[flow] (emb)  -- (kg);
+\draw[qry]  (emb.south east) to[out=-30,in=30] (rrf.east);
+\draw[qry]  (kg)  -- (rrf.east);
+\end{tikzpicture}
+\caption{ECI end-to-end workflow. Node colour denotes architectural layer:
+\textcolor{blue!55!black}{blue} = Platform Evolution, \textcolor{teal}{teal}
+= Semantic Retrieval (DeltaRAG), \textcolor{orange!80!black}{orange} = Agent
+Intelligence. Solid arrows are the execution spine; dashed arrows show the
+continuously built vector index $\mathcal{D}$ and knowledge graph $\mathcal{G}$
+being queried at retrieval time.}
+\label{fig:workflow}
+\end{figure}
+
+\begin{algorithm}[t]
+\caption{ECI: from ecosystem change to Action Ticket}
+\label{alg:eci}
+\begin{algorithmic}[1]
+\Require sources $\mathcal{S}$, relevance threshold $\tau$, depth $k$, fusion constant $k_{\mathrm{rrf}}$
+\Statex \textit{// Continuous, delta-only indexing}
+\ForAll{$s_i \in \mathcal{S}$}
+  \State $\Delta_i \gets \textsc{Diff}\big(\textsc{Fetch}(s_i),\, s_i(t_{k-1})\big)$
+  \If{$\Delta_i$ exceeds the cosmetic-change threshold}
+    \State $\mathcal{D} \gets \mathcal{D} \cup \textsc{Embed}(\textsc{Chunk}(\Delta_i))$ \Comment{delta-only vector index}
+    \State $\mathcal{G} \gets \textsc{UpdateKG}\big(\mathcal{G},\, \textsc{Entities}(\Delta_i)\big)$
+  \EndIf
+\EndFor
+\Statex \textit{// Per pending change: triage, then generate}
+\ForAll{pending change $\Delta$ with text $q$}
+  \State $\mathit{tri} \gets \textsc{Sentinel}(\Delta)$ \Comment{LLM first-pass triage}
+  \If{$\mathit{tri}.\mathrm{relevance} \geq \tau$}
+    \State $R_{\mathrm{vec}} \gets \operatorname{top\text{-}}k_{\,c \in \mathcal{D}}\, \cos\!\big(\phi_q(q),\, \mathbf{e}_c\big)$
+    \State $K \gets \{\,c : c \text{ linked to } N_2(\mathcal{E}(q)) \text{ in } \mathcal{G}\,\}$
+    \State $F \gets \textsc{RRF}(R_{\mathrm{vec}},\, K;\, k_{\mathrm{rrf}})$ \Comment{DeltaRAG fusion}
+    \State $A \gets \textsc{Coordinator}(\Delta,\, F)$ \Comment{summary, risk, actions, evidence}
+    \State \textbf{emit} Action Ticket $A$
+  \EndIf
+\EndFor
+\end{algorithmic}
+\end{algorithm}
 
 \subsection{Platform Evolution Layer}\label{platform-evolution-layer}
 
-\emph{\textbf{Source Registry}}
+\subsubsection{Source Registry}
 
 Monitored sources are stored in a relational registry table in Supabase. Each record contains the source URL, name, fetch type (HTML or API/JSON), source category (\texttt{security\_bulletin}, \texttt{developer\_docs}, \texttt{cve\_feed}, \texttt{policy\_update}), and active status. The registry uses an idempotent upsert on the URL field, ensuring re-seeding the pipeline does not create duplicate entries.
 
-\emph{\textbf{Snapshot Ingestion}}
+\subsubsection{Snapshot Ingestion}
 
 Automated scripts periodically fetch raw content from each active source. HTML pages are retrieved via \texttt{requests} and parsed with \texttt{BeautifulSoup4} to strip navigation, headers, footers, and scripts, retaining only the structural body content. API/JSON sources (e.g., the CISA KEV feed) are fetched directly and serialized. Each fetch produces a snapshot record containing the raw text, cleaned text, content hash (SHA-256), and timestamp, enabling full historical lineage.
 
-\emph{\textbf{Change Detection}}
+\subsubsection{Change Detection}
 
 For each new snapshot, the system retrieves the most recent prior snapshot for the same source and computes a structured diff. The diffing logic identifies added and deleted blocks. Trivial, cosmetic changes (whitespace normalization, minor formatting shifts) are filtered using a strict lexical distance threshold computed via \texttt{difflib.SequenceMatcher}. Changes that exceed the threshold are recorded as change events in a dedicated \texttt{changes} table, linked to both the previous and new snapshot IDs.
 
 \subsection{Semantic Retrieval Layer}\label{semantic-retrieval-layer-deltarag}
 
-\emph{\textbf{Chunking Strategy}}
+\subsubsection{Chunking Strategy}
 
-Change content is chunked into 1,600-character segments with 200-character overlaps. This 1600/200 rule balances granularity (ensuring each chunk is semantically focused) against context preservation (preventing sentence breaks). Before embedding, each chunk is prefixed with \texttt{search\_document:} to activate Nomic v1.5's task-aware encoding path, optimizing the embedding strictly for retrieval rather than classification.
+Change content is chunked following Eq.~3 (the 1600/200 rule), balancing granularity (each chunk stays semantically focused) against context preservation (avoiding mid-sentence breaks). Before embedding, each chunk is prefixed with \texttt{search\_document:} to activate Nomic v1.5's task-aware encoding path (Eq.~4), optimizing the embedding strictly for retrieval rather than classification.
 
-\emph{\textbf{Embedding Model: Nomic v1.5}}
+\subsubsection{Embedding Model: Nomic v1.5}
 
-We selected Nomic Embed v1.5 based on strict architectural constraints for processing security data. It offers three critical advantages over standard models: (1) 768-dimensional embeddings that accurately capture nuanced distinctions between vulnerability classes; (2) an 8,192-token maximum input length, accommodating long JSON feeds and policy documents without truncating context; and (3) local execution capability, ensuring zero-day vulnerability data never leaves the organization's controlled infrastructure.
+We selected Nomic Embed v1.5 (the selection criteria are detailed in Section~\ref{retrieval-quality}). For the architecture, its decisive properties are: 768-dimensional embeddings that capture nuanced distinctions between vulnerability classes; an 8,192-token input length that accommodates long JSON feeds and policy documents without truncation; and local execution, ensuring zero-day vulnerability data never leaves controlled infrastructure.
 
-\emph{\textbf{Vector Storage: Supabase + pgvector}}
+\subsubsection{Vector Storage: Supabase + pgvector}
 
 Embedded chunks are stored in a Supabase PostgreSQL database utilizing the \texttt{pgvector} extension. The \texttt{embeddings} table stores: chunk ID, source ID, source category, change ID, chunk kind (addition, deletion), chunk text, and a \texttt{vector(768)} embedding column. An HNSW (Hierarchical Navigable Small World) index enables sub-10ms cosine similarity search. Using PostgreSQL-native storage rather than an isolated vector database (e.g., Pinecone) enables seamless SQL joins between vector representations, relational change events, and downstream agent recommendations.
 
 \subsection{Agent Intelligence Layer}\label{agent-intelligence-layer}
 
-\emph{\textbf{Sentinel Triage Agent}}
+\subsubsection{Sentinel Triage Agent}
 
 The Sentinel Agent serves as the first-pass filter. For each new change event, it receives the structured change description and performs semantic comprehension, identifying what the change means in the context of ecosystem fraud and security operations. It assigns a relevance score (threshold $\geq5$) and classifies the domain (e.g., \texttt{vulnerability\_exposure}). Most importantly, it distinguishes signal from noise, acting as a gatekeeper to prevent the Coordinator Agent from processing irrelevant documentation updates. The Sentinel outputs strict, validated JSON.
 
-\emph{\textbf{Coordinator Agent (KG-Augmented Retrieval)}}
+\subsubsection{Coordinator Agent (KG-Augmented Retrieval)}
 
 Changes that pass the Sentinel's threshold escalate to the Coordinator
 Agent for deep analysis. The Coordinator performs the full
@@ -532,7 +609,7 @@ explaining why the change matters, aggregates related high-risk events
 produces Action Tickets with priority levels, suggested owners, and
 explicit evidence citations pointing directly to the retrieved chunks.
 
-\emph{\textbf{Pipeline Orchestration \& Logging}}
+\subsubsection{Pipeline Orchestration \& Logging}
 
 Rather than relying on heavy multi-agent orchestration frameworks, the system employs an asynchronous backend worker (\texttt{run\_pipeline.py}) that polls a \texttt{pipeline\_jobs} queue. As the worker executes the sequential stages (Ingest $\rightarrow$ Diff $\rightarrow$ Vectorize $\rightarrow$ KG Update $\rightarrow$ Sentinel $\rightarrow$ Coordinator), it streams \texttt{stdout} natively into a relational \texttt{pipeline\_logs} table. This architecture guarantees full traceability of every retrieval step and LLM invocation, driving the real-time execution monitor on the Next.js dashboard.
 
@@ -557,20 +634,17 @@ change event.
 
 \subsection{KG-Augmented Retrieval via RRF}\label{graph-augmented-retrieval}
 
-At query time, the system executes a parallel retrieval strategy to
-capture both semantic similarity and structural dependencies. Given a
-query (e.g., a new bulletin diff):
-\begin{enumerate}
-    \item \textbf{Vector Search}: Retrieves the top-$K$ semantically similar chunks across all other sources from the delta-chunk index (Eq.~5), using Nomic Embed v1.5.
-    \item \textbf{KG Traversal}: Extracts entities from the query, traverses the KG up to 2 hops (Eq.~7) to find connected change events, and gathers their corresponding chunks (Eq.~8).
-\end{enumerate}
-Rather than naively appending these lists or aggressively boosting graph
-distances (which would displace highly-relevant semantic matches), the
-system merges the two sets using Reciprocal Rank Fusion (RRF, Eq.~9)
-with $k_{\mathrm{rrf}} = 60$. This ensures that a chunk ranked highly by
-Vector Search retains its score even if the KG fails to find an entity
-path to it, providing robust fallback behavior. The fused output is the
-\textbf{DeltaRAG} retrieval defined in Eq.~10.
+At query time the system runs vector search (Eq.~5) and 2-hop KG traversal
+(Eqs.~7--8) in parallel and merges them with Reciprocal Rank Fusion
+(Eq.~9, $k_{\mathrm{rrf}} = 60$), yielding the DeltaRAG retrieval of
+Eq.~10. The design choice worth emphasizing is the use of RRF over naive
+list concatenation or graph-distance boosting: because RRF combines
+\emph{ranks} rather than raw scores, a chunk ranked highly by vector
+search retains competitive standing even when the KG contributes nothing.
+Extraction blackouts therefore degrade gracefully to the vector baseline
+rather than catastrophically; the residual cost, when both signals are
+active but disagree, is the fusion regression characterized in
+Section~\ref{failure-analysis}.
 
 \subsection{Entity-Weighted Scoring \& Cross-Category Bonus}\label{adaptive-retrieval-strategy-learning}
 
