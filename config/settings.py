@@ -20,7 +20,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 SQLITE_DB_PATH = DATA_DIR / ("eci_eval.db" if ECI_EVAL else "eci.db")
 CHROMA_PERSIST_DIR = str(DATA_DIR / ("chroma_eval" if ECI_EVAL else "chroma_store"))
 SOURCES_FILE = PROJECT_ROOT / "config" / "sources.json"
-KNOWLEDGE_GRAPH_PATH = DATA_DIR / "knowledge_graph.json"
+KNOWLEDGE_GRAPH_PATH = DATA_DIR / ("knowledge_graph_eval.json" if ECI_EVAL else "knowledge_graph.json")
 
 # Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)

@@ -9,14 +9,16 @@ Persistence: JSON serialization to data/knowledge_graph.json
 import json
 from pathlib import Path
 from dataclasses import dataclass
-from config.settings import DATA_DIR
+from config.settings import DATA_DIR, KNOWLEDGE_GRAPH_PATH
 
 try:
     import networkx as nx
 except ImportError:
     raise ImportError("networkx is required: pip install networkx")
 
-GRAPH_FILE = DATA_DIR / "knowledge_graph.json"
+# Eval mode (ECI_EVAL) resolves this to a separate file so evaluation never
+# reads or overwrites the production graph, and vice versa.
+GRAPH_FILE = KNOWLEDGE_GRAPH_PATH
 
 
 class KnowledgeGraph:

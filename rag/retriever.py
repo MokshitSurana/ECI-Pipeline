@@ -58,7 +58,7 @@ def retrieve_context(query: str, top_k: int = 5, source_filter: int = None,
 
 
 def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5,
-                       rrf_k: int = 60) -> dict:
+                       rrf_k: int = 60, timings: dict = None) -> dict:
     """Graph-RAG retrieval: combine vector similarity with knowledge graph traversal.
 
     This replaces the old retrieve_cross_source() with true Graph-RAG:
@@ -76,6 +76,13 @@ def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5,
     Returns:
         Same format as retrieve_context() plus graph metadata.
     """
+    # Optional per-stage timing for the latency/overhead profile. When a dict
+    # is passed, each stage records its wall-clock cost (seconds) into it.
+    from time import perf_counter
+    def _tick(label, t0):
+        if timings is not None:
+            timings[label] = timings.get(label, 0.0) + (perf_counter() - t0)
+
     # Check if the user is explicitly asking about a specific change ID (only for Chat UI)
     import re
     explicit_filters = None
@@ -86,18 +93,23 @@ def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5,
             explicit_filters = {"change_id": int(match.group(1))}
 
     # Step 1: Vector similarity search (exclude same-source)
+    _t = perf_counter()
     all_chunks = query_similar(change_text, top_k=top_k * 2, filters=explicit_filters)
+    _tick("vector_retrieval", _t)
     vector_chunks = [c for c in all_chunks if c["metadata"].get("source_id") != source_id]
 
     # Step 2: Extract entities from change text
+    _t = perf_counter()
     entities = extract_entities(change_text)
     entity_ids = [e.value for e in entities.entities]
+    _tick("entity_extraction", _t)
 
     # Explicitly add the change_X node to the entity traversal list so the graph connects it
     if match:
         entity_ids.append(f"change_{match.group(1)}")
 
     # Step 3: Knowledge graph traversal with relevance ranking
+    _t = perf_counter()
     graph_chunks = []
     if entity_ids:
         kg = KnowledgeGraph.load_or_create()
@@ -126,6 +138,7 @@ def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5,
                         graph_chunks.append(c)
             except Exception:
                 pass
+    _tick("kg_traversal", _t)
 
     # ── Step 5: Reciprocal Rank Fusion (RRF) ──────────────────────
     # RRF combines two independent rankings without letting either
@@ -138,6 +151,7 @@ def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5,
     # parameterized here so the sensitivity sweep can vary the fusion constant.
     RRF_K = rrf_k
 
+    _t = perf_counter()
     # Build rank maps (chunk_id → 1-indexed rank)
     rag_rank = {}
     for rank, chunk in enumerate(vector_chunks, 1):
@@ -178,6 +192,7 @@ def retrieve_graph_rag(change_text: str, source_id: int, top_k: int = 5,
             seen_ids.add(chunk["id"])
             merged.append(chunk)
     merged = merged[:top_k]
+    _tick("fusion", _t)
 
     # Format evidence blocks
     evidence_blocks = []
